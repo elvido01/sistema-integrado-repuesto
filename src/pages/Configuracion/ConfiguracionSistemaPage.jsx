@@ -26,6 +26,7 @@ import { fmtMontoInput, parseMontoInput } from '@/lib/numberFormat';
 // Leyéndola del manifest, la URL cambia sola en cuanto sube la versión.
 import extensionManifest from '../../../whatsapp-quote-extension/public/manifest.json';
 import omniBetaManifest from '../../../whatsapp-quote-extension/public/manifest.beta.json';
+import AdministrarCajas from '@/components/caja/AdministrarCajas';
 
 const versionDe = (m) => m?.version_name || m?.version || '?';
 
@@ -1088,14 +1089,18 @@ const ConfiguracionSistemaPage = () => {
                                     <SelectContent>
                                         <SelectItem value="simple">Una sola caja, sin apertura</SelectItem>
                                         <SelectItem value="apertura">Una caja con apertura y cierre</SelectItem>
-                                        <SelectItem value="varias" disabled>Varias cajas (en preparación)</SelectItem>
+                                        <SelectItem value="varias">Varias cajas (cada una con su cajero y su cierre)</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-500 italic">
                                     {formData.modo_caja === 'apertura'
                                         ? 'La caja amanece abierta. Después de cada cierre, el siguiente cajero la abre con su fondo inicial; su cierre cuenta desde esa apertura.'
-                                        : 'Como siempre: se vende sin abrir caja y se cierra al final.'}
+                                        : formData.modo_caja === 'varias'
+                                            ? 'Cada cajero abre una de las cajas con su fondo y la cierra al final (o la cierra un administrador). Sin caja abierta no se puede vender, cobrar ni pagar en efectivo. El cierre de cada caja cuenta lo que hizo su cajero desde que la abrió.'
+                                            : 'Como siempre: se vende sin abrir caja y se cierra al final.'}
                                 </p>
+                                {/* (20/11/2026) Las cajas se crean aquí; el modo se guarda con el botón de siempre. */}
+                                {formData.modo_caja === 'varias' && <AdministrarCajas />}
                             </div>
                         </div>
                     </div>

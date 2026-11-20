@@ -654,7 +654,8 @@ const VentasPage = () => {
 
   const handleConfirmAndPrint = async () => {
     // Caja cerrada (modo con apertura): primero se abre. Editar una factura no la exige.
-    if (!editingFacturaId && (!estadoCaja || estadoCaja.modo === 'apertura')) {
+    // (20/11/2026) Con varias cajas también: sin tu caja abierta no se vende.
+    if (!editingFacturaId && (!estadoCaja || estadoCaja.modo === 'apertura' || estadoCaja.modo === 'varias')) {
       const e = await consultarEstadoCaja();
       if (e) setEstadoCaja(e);
       if (e?.requiere_apertura) { setPedirApertura(true); return; }

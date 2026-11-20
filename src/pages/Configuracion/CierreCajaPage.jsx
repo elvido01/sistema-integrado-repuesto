@@ -121,6 +121,25 @@ const CierreCajaPage = () => {
     return () => { vivo = false; };
   }, [activePanel, tenantId, fechaElegida]);
   const conApertura = estadoCaja?.modo === 'apertura';
+  // (20/11/2026) Varias cajas: se cierra UNA caja abierta. El cajero ve la
+  // suya; el administrador, todas. El resumen cuenta lo que hizo su cajero
+  // desde que la abrió. sql/varias_cajas.sql
+  const conVarias = estadoCaja?.modo === 'varias';
+  const [aperturaSelId, setAperturaSelId] = useState(null);
+  const cajasParaCerrar = useMemo(() => (conVarias
+    ? [...(estadoCaja?.abiertas || []), ...(estadoCaja?.recientes || [])]
+        .filter((a) => estadoCaja?.es_admin || a.cajero_id === user?.id)
+    : []), [conVarias, estadoCaja, user?.id]);
+  const aperturaSel = cajasParaCerrar.find((a) => a.apertura_id === aperturaSelId) || null;
+  useEffect(() => {
+    if (!conVarias) { setAperturaSelId(null); return; }
+    setAperturaSelId((prev) => {
+      if (prev && cajasParaCerrar.some((a) => a.apertura_id === prev)) return prev;
+      const abiertas = cajasParaCerrar.filter((a) => !a.cerrada);
+      const mia = abiertas.find((a) => a.cajero_id === user?.id);
+      return (mia || abiertas[0] || {}).apertura_id || null;
+    });
+  }, [conVarias, cajasParaCerrar, user?.id]);
   // ¿El estado cargado es el del día en pantalla? Mientras no, no se cierra.
   const estadoDelDia = !!estadoCaja && estadoCaja.fecha === fechaElegida;
   useEffect(() => {
@@ -135,7 +154,7 @@ const CierreCajaPage = () => {
   // Las líneas de transferencia/cheque/tarjeta que están abiertas (flecha).
   const [cuentasAbiertas, setCuentasAbiertas] = useState({});
   // Otro día u otro cajero: las líneas vuelven a cerradas.
-  useEffect(() => { setCuentasAbiertas({}); }, [fecha, selectedCajero]);
+  useEffect(() => { setCuentasAbiertas({}); }, [fecha, selectedCajero, aperturaSelId]);
   const [saving, setSaving] = useState(false);
   const [loadingResumen, setLoadingResumen] = useState(false);
   const [imprimir, setImprimir] = useState(true);
@@ -181,7 +200,9 @@ const CierreCajaPage = () => {
     if (!fecha && !soloCalcular) return;
     if (!soloCalcular) setLoadingResumen(true);
 
-    const fechaStr = p_fechaStr || formatDateForSupabase(fecha);
+    // Varias cajas: la caja elegida pone la fecha, la ventana, el fondo y el cajero.
+    const cajaVarias = !soloCalcular && estadoCaja?.modo === 'varias' ? aperturaSel : null;
+    const fechaStr = p_fechaStr || (cajaVarias ? cajaVarias.fecha : formatDateForSupabase(fecha));
     // Los extremos del día EN HORA DE AQUÍ. Antes se mandaba
     // '2026-08-20T00:00:00' pelado y la base, que está en UTC, lo leía como
     // las 8:00 PM de ayer: la ventana entera iba corrida cuatro horas. Una
@@ -190,11 +211,16 @@ const CierreCajaPage = () => {
     const { desde: startOfDay, hasta: endOfDay } = rangoDelDia(fechaStr);
     // Con apertura, HOY se cuenta desde la apertura del turno (NULL = turno de
     // la mañana: el día entero, como siempre). Otros días: el día entero.
-    const ventanaTurno = !soloCalcular && estadoCaja?.modo === 'apertura' && estadoCaja?.fecha === fechaStr;
+    const ventanaTurno = !soloCalcular && ((estadoCaja?.modo === 'apertura' && estadoCaja?.fecha === fechaStr) || !!cajaVarias);
     const pedido = soloCalcular ? null : ++pedidoResumenRef.current;
-    const desdeTurno = ventanaTurno ? (estadoCaja.desde || null) : null;
-    const fondoApertura = ventanaTurno ? (Number(estadoCaja.fondo) || 0) : 0;
-    const enTurno = (t) => !desdeTurno || (!!t && new Date(t) >= new Date(desdeTurno));
+    const desdeTurno = cajaVarias ? (cajaVarias.desde || null) : ventanaTurno ? (estadoCaja.desde || null) : null;
+    const fondoApertura = cajaVarias ? (Number(cajaVarias.fondo) || 0) : ventanaTurno ? (Number(estadoCaja.fondo) || 0) : 0;
+    // Cajero de la caja (varias) o el elegido en la lista (como siempre).
+    const cajeroCaja = cajaVarias?.cajero_id || null;
+    const cajeroFiltro = cajeroCaja || (selectedCajero && selectedCajero !== 'ALL' ? selectedCajero : null);
+    const hastaTurno = cajaVarias?.hasta || null;
+    const enTurno = (t) => (!desdeTurno || (!!t && new Date(t) >= new Date(desdeTurno)))
+      && (!hastaTurno || (!!t && new Date(t) < new Date(hastaTurno)));
 
     let ventas = [];
     let devoluciones = [];
@@ -215,8 +241,8 @@ const CierreCajaPage = () => {
         .gte('fecha', startOfDay)
         .lte('fecha', endOfDay);
 
-      if (selectedCajero && selectedCajero !== 'ALL') {
-        ventasQuery = ventasQuery.eq('usuario_id', selectedCajero);
+      if (cajeroFiltro) {
+        ventasQuery = ventasQuery.eq('usuario_id', cajeroFiltro);
       }
 
       const { data: ventasData, error: ventasErr } = await ventasQuery;
@@ -236,8 +262,8 @@ const CierreCajaPage = () => {
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
 
-      if (selectedCajero && selectedCajero !== 'ALL') {
-        ventasMovilesQuery = ventasMovilesQuery.eq('usuario_id', selectedCajero);
+      if (cajeroFiltro) {
+        ventasMovilesQuery = ventasMovilesQuery.eq('usuario_id', cajeroFiltro);
       }
 
       const { data: ventasMovilesData, error: ventasMovilesErr } = await ventasMovilesQuery;
@@ -258,7 +284,7 @@ const CierreCajaPage = () => {
       // Devoluciones del día (sin filtro de usuario)
       const { data: devData, error: devErr } = await supabase
         .from('devoluciones')
-        .select('total_devolucion, created_at, facturas!inner(forma_pago)')
+        .select('total_devolucion, created_at, usuario_id, facturas!inner(forma_pago)')
         .eq('tenant_id', tenantId)
         .ilike('facturas.forma_pago', 'contado')
         .eq('fecha_devolucion', fechaStr);
@@ -278,7 +304,7 @@ const CierreCajaPage = () => {
       // Primero filtramos por fecha como DATE, luego fallback a created_at.
       const { data: recibosData, error: recibosErr } = await supabase
         .from('recibos_ingreso')
-        .select('numero, monto_pagado, fecha, created_at, origen, formas_pago, clientes(nombre)')
+        .select('numero, monto_pagado, fecha, created_at, origen, formas_pago, usuario_id, clientes(nombre)')
         .eq('tenant_id', tenantId)
         .eq('anulado', false)
         .eq('fecha', fechaStr);
@@ -288,7 +314,7 @@ const CierreCajaPage = () => {
         // Fallback: intentar por created_at (TIMESTAMPTZ)
         const { data: recibosCreatedData, error: recibosCreatedErr } = await supabase
           .from('recibos_ingreso')
-          .select('numero, monto_pagado, created_at, origen, formas_pago, clientes(nombre)')
+          .select('numero, monto_pagado, created_at, origen, formas_pago, usuario_id, clientes(nombre)')
           .eq('tenant_id', tenantId)
           .eq('anulado', false)
           .gte('created_at', startOfDay)
@@ -312,7 +338,7 @@ const CierreCajaPage = () => {
       // Pagos a Suplidores del día
       const { data: pagosData, error: pagosErr } = await supabase
         .from('pagos_suplidores')
-        .select('monto_pagado, formas_pago, created_at')
+        .select('monto_pagado, formas_pago, created_at, usuario_id')
         .eq('tenant_id', tenantId)
         .eq('anulado', false)
         .gte('created_at', startOfDay)
@@ -330,7 +356,7 @@ const CierreCajaPage = () => {
     try {
       const { data: gastosData, error: gastosErr } = await supabase
         .from('gastos_diarios')
-        .select('monto, descripcion, tipo_gasto, afecta_caja, cuenta_bancaria_id, es_tercero, concepto_tercero, created_at')
+        .select('monto, descripcion, tipo_gasto, afecta_caja, cuenta_bancaria_id, es_tercero, concepto_tercero, created_at, usuario_id')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr)
         .eq('anulado', false);
@@ -369,7 +395,7 @@ const CierreCajaPage = () => {
     try {
       const { data: compData, error: compErr } = await supabase
         .from('compras')
-        .select('numero, total_compra, forma_pago, estado, pagos, created_at')
+        .select('numero, total_compra, forma_pago, estado, pagos, created_at, usuario_id')
         .eq('tenant_id', tenantId)
         .ilike('forma_pago', 'contado')
         .gte('created_at', startOfDay)
@@ -378,7 +404,7 @@ const CierreCajaPage = () => {
         console.warn('Error cargando compras de contado:', compErr.message);
       } else {
         comprasContadoEfectivo = (compData || [])
-          .filter((c) => (c.estado || '') !== 'ANULADA' && enTurno(c.created_at))
+          .filter((c) => (c.estado || '') !== 'ANULADA' && enTurno(c.created_at) && (!cajeroCaja || c.usuario_id === cajeroCaja))
           .reduce((sum, c) => {
             // Las líneas de «Monto Pagado» dicen de dónde salió. Tipo '01' es
             // Efectivo; lo demás sale de una cuenta y no toca la gaveta.
@@ -398,7 +424,7 @@ const CierreCajaPage = () => {
       // Préstamos originados hoy con desembolso en EFECTIVO (salen de la caja)
       const { data: prestData, error: prestErr } = await supabase
         .from('prestamos')
-        .select('numero, monto_capital, created_at, clientes(nombre)')
+        .select('numero, monto_capital, created_at, created_by, clientes(nombre)')
         .eq('tenant_id', tenantId)
         .ilike('desembolso', 'efectivo')
         .gte('created_at', startOfDay)
@@ -499,7 +525,7 @@ const CierreCajaPage = () => {
     try {
       const { data: movData, error: movErr } = await supabase
         .from('caja_depositos')
-        .select('id, monto_caja, moneda, tasa, monto_cuenta, concepto, cuenta_id, created_at, cuentas_bancarias(banco, alias)')
+        .select('id, monto_caja, moneda, tasa, monto_cuenta, concepto, cuenta_id, created_at, created_by, cuentas_bancarias(banco, alias)')
         .eq('tenant_id', tenantId)
         .eq('fecha', fechaStr)
         .eq('anulado', false)
@@ -516,7 +542,7 @@ const CierreCajaPage = () => {
     }
 
     // Con apertura: solo lo de este turno (desde su apertura).
-    if (desdeTurno) {
+    if (desdeTurno || hastaTurno) {
       ventas = ventas.filter((v) => enTurno(v.created_at));
       devoluciones = devoluciones.filter((d) => enTurno(d.created_at));
       recibos = recibos.filter((r) => enTurno(r.created_at));
@@ -527,6 +553,20 @@ const CierreCajaPage = () => {
       prestamosEfectivo = prestamosEfectivo.filter((p) => enTurno(p.created_at));
       compromisosEfectivo = compromisosEfectivo.filter((c) => enTurno(c.fecha_pago));
       efectivoMovido = efectivoMovido.filter((d) => enTurno(d.created_at));
+    }
+    // Varias cajas: solo lo que hizo el cajero de esta caja. Los compromisos
+    // no guardan quién los pagó: no entran en el cierre de ninguna caja.
+    if (cajeroCaja) {
+      const suyo = (u) => u === cajeroCaja;
+      devoluciones = devoluciones.filter((d) => suyo(d.usuario_id));
+      recibos = recibos.filter((r) => suyo(r.usuario_id));
+      pagosSuplidores = pagosSuplidores.filter((p) => suyo(p.usuario_id));
+      gastosDiarios = gastosDiarios.filter((g) => suyo(g.usuario_id));
+      pagosTerceros = pagosTerceros.filter((g) => suyo(g.usuario_id));
+      pagosNomina = pagosNomina.filter((g) => suyo(g.usuario_id));
+      prestamosEfectivo = prestamosEfectivo.filter((p) => suyo(p.created_by));
+      efectivoMovido = efectivoMovido.filter((d) => suyo(d.created_by));
+      compromisosEfectivo = [];
     }
 
     const ventasContado = ventas.filter(v => {
@@ -708,6 +748,7 @@ const CierreCajaPage = () => {
       // y desde cuándo cuenta este cierre. Van en la foto (detalle).
       fondoApertura,
       desde: desdeTurno,
+      ...(cajaVarias ? { caja: { apertura_id: cajaVarias.apertura_id, caja_id: cajaVarias.caja_id, nombre: cajaVarias.caja_nombre, cajero_id: cajaVarias.cajero_id, cajero: cajaVarias.cajero_nombre } } : {}),
       efectivoEnCaja: totalVentasContadoCaja + totalRecibosEfectivo - totalDevoluciones - totalPagosSuplidoresEfectivo - totalGastosDiarios - totalPagosTerceros - totalPagosNomina - totalPrestamosEfectivo - totalCompromisosEfectivo - comprasContadoEfectivo - totalEfectivoMovido,
     };
 
@@ -717,7 +758,7 @@ const CierreCajaPage = () => {
     setResumen(calculado);
     setLoadingResumen(false);
     return calculado;
-  }, [fecha, selectedCajero, tenantId, estadoCaja]);
+  }, [fecha, selectedCajero, tenantId, estadoCaja, aperturaSel]);
 
   useEffect(() => {
     fetchResumen();
@@ -767,6 +808,14 @@ const CierreCajaPage = () => {
 
   /* ── Cerrar turno ── */
   const handleCerrarTurno = async () => {
+    if (conVarias && !aperturaSel) {
+      toast({ variant: 'destructive', title: 'Escoge la caja', description: 'Con varias cajas se cierra una caja a la vez: escoge cuál vas a cerrar.' });
+      return;
+    }
+    if (conVarias && resumen?.caja?.apertura_id !== aperturaSel.apertura_id) {
+      toast({ variant: 'destructive', title: 'Un momento', description: 'Todavía se están calculando los montos de esa caja. Vuelve a intentar.' });
+      return;
+    }
     if (conApertura && !estadoDelDia) {
       toast({ variant: 'destructive', title: 'Un momento', description: 'Todavía se está leyendo el turno de la caja de ese día. Vuelve a intentar.' });
       return;
@@ -779,10 +828,10 @@ const CierreCajaPage = () => {
 
       const cierre = {
         tenant_id: tenantId,
-        fecha: formatDateForSupabase(fecha),
-        turno,
-        cajero_id: selectedCajero === 'ALL' ? user?.id : selectedCajero,
-        cajero_nombre: cajeroName,
+        fecha: aperturaSel ? aperturaSel.fecha : formatDateForSupabase(fecha),
+        turno: aperturaSel ? aperturaSel.turno : turno,
+        cajero_id: aperturaSel ? aperturaSel.cajero_id : (selectedCajero === 'ALL' ? user?.id : selectedCajero),
+        cajero_nombre: aperturaSel ? `${aperturaSel.caja_nombre} — ${aperturaSel.cajero_nombre || ''}` : cajeroName,
         total_ventas: resumen?.totalVentas || 0,
         total_ventas_contado: resumen?.totalVentasContado || 0,
         total_ventas_contado_caja: resumen?.totalVentasContadoCaja || 0,
@@ -816,11 +865,11 @@ const CierreCajaPage = () => {
           p_cuenta_id: cuentaId,
           p_tipo: 'ENTRADA',
           p_monto: efectivo,
-          p_concepto: `Cierre de caja — turno ${turno} (${formatDateForSupabase(fecha)})`,
+          p_concepto: aperturaSel ? `Cierre de ${aperturaSel.caja_nombre} — turno ${aperturaSel.turno} (${aperturaSel.fecha})` : `Cierre de caja — turno ${turno} (${formatDateForSupabase(fecha)})`,
           p_referencia: null,
           p_origen_tipo: 'cierre_caja',
           p_origen_id: cierreRow.id,
-          p_fecha: formatDateForSupabase(fecha),
+          p_fecha: aperturaSel ? aperturaSel.fecha : formatDateForSupabase(fecha),
         });
         if (eMov) toast({ variant: 'destructive', title: 'Cierre grabado, pero no se registró en la cuenta', description: eMov.message });
       } else if (efectivo > 0 && !cuentaId) {
@@ -837,7 +886,7 @@ const CierreCajaPage = () => {
         printCierreCaja(cierre, resumen);
       }
 
-      toast({ title: 'Cierre de Caja', description: `El cierre del turno ${turno} ha sido registrado exitosamente.` });
+      toast({ title: 'Cierre de Caja', description: aperturaSel ? `El cierre de ${aperturaSel.caja_nombre} quedó registrado.` : `El cierre del turno ${turno} ha sido registrado exitosamente.` });
 
       // Reset
       setCantidades(prev => ({
@@ -848,7 +897,7 @@ const CierreCajaPage = () => {
       // Con una sola caja al día el turno no avanza: siempre es el 1.
       if (!unTurno && !conApertura) setTurno(prev => Math.min(prev + 1, turnosPorDia));
       // Con apertura, la caja queda cerrada: al siguiente cajero le sale "Abrir caja".
-      if (conApertura) consultarEstadoCaja().then(setEstadoCaja);
+      if (conApertura || conVarias) consultarEstadoCaja(fechaElegida).then(setEstadoCaja);
       fetchResumen();
     } catch (err) {
       console.error('Error saving cierre:', err);
@@ -1400,6 +1449,25 @@ const CierreCajaPage = () => {
             )}
 
             {/* Caja */}
+            {conVarias ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <Label className="font-bold text-xs shrink-0">Caja</Label>
+                {cajasParaCerrar.length === 0 ? (
+                  <span className="text-xs text-gray-500">{estadoCaja?.es_admin ? 'No hay cajas abiertas.' : 'No tienes una caja abierta.'}</span>
+                ) : (
+                  <Select value={aperturaSelId || ''} onValueChange={setAperturaSelId}>
+                    <SelectTrigger className="flex-1 min-w-0 h-8 text-sm px-2"><SelectValue placeholder="Escoge la caja" /></SelectTrigger>
+                    <SelectContent>
+                      {cajasParaCerrar.map((a) => (
+                        <SelectItem key={a.apertura_id} value={a.apertura_id}>
+                          {a.caja_nombre} — {a.cajero_nombre || 'cajero'} · {a.cerrada ? 'cerrada (rehacer cierre)' : `abierta ${new Date(a.desde).toLocaleTimeString('es-DO', { hour: 'numeric', minute: '2-digit' })}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : (
             <div className="flex items-center gap-2 min-w-0">
               <Label className="font-bold text-xs shrink-0">Caja</Label>
               <Select value="caja1" disabled>
@@ -1414,8 +1482,10 @@ const CierreCajaPage = () => {
                 </span>
               )}
             </div>
+            )}
 
-            {/* Cajero */}
+            {/* Cajero (en varias cajas lo pone la caja) */}
+            {!conVarias && (
             <div className="flex items-center gap-2 min-w-0">
               <Label className="font-bold text-xs shrink-0">Cajero</Label>
               <Select value={selectedCajero} onValueChange={setSelectedCajero}>
@@ -1432,6 +1502,7 @@ const CierreCajaPage = () => {
                 </SelectContent>
               </Select>
             </div>
+            )}
           </div>
 
           {/* ── Resumen Section ── */}
@@ -1444,7 +1515,7 @@ const CierreCajaPage = () => {
               {/* Summary Card */}
               <div className="border rounded-lg p-4 bg-gradient-to-br from-slate-50 to-blue-50">
                 <h2 className="font-bold text-sm uppercase text-gray-500 tracking-wider mb-3">
-                  {selectedCajero === 'ALL' ? 'Resumen Total del Día' : 'Resumen del Turno'}
+                  {aperturaSel ? `Resumen de ${aperturaSel.caja_nombre} — ${aperturaSel.cajero_nombre || ''}` : selectedCajero === 'ALL' ? 'Resumen Total del Día' : 'Resumen del Turno'}
                 </h2>
                 <div className="space-y-2">
                   {/* ── LO QUE ENTRÓ ── */}

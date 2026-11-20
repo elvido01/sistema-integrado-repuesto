@@ -70,7 +70,7 @@ export default function POSScreen() {
   const [servicioOpen, setServicioOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   // Caja cerrada (modo con apertura): ventana para abrirla antes de cobrar.
-  const [abrirCaja, setAbrirCaja] = useState<{ turno?: number } | null>(null);
+  const [abrirCaja, setAbrirCaja] = useState<{ turno?: number; estado?: any } | null>(null);
   // `disabled={loading}` llega un render tarde: dos toques seguidos en Cobrar
   // alcanzaban a grabar dos facturas (FT-3906 y FT-3907, 10/09/2026, 1 minuto).
   const cobrandoRef = useRef(false);
@@ -209,7 +209,7 @@ export default function POSScreen() {
         return;
       }
       if (caja?.requiere_apertura) {
-        setAbrirCaja({ turno: caja.turno });
+        setAbrirCaja({ turno: caja.turno, estado: caja });
         return;
       }
       // FREE: como si la empresa no facturara electrónico (no se emite e-CF ni
@@ -869,6 +869,7 @@ export default function POSScreen() {
       <AbrirCajaModal
         visible={!!abrirCaja}
         turno={abrirCaja?.turno}
+        estado={abrirCaja?.estado}
         onCerrar={() => setAbrirCaja(null)}
         onAbierta={() => { setAbrirCaja(null); Alert.alert('Caja abierta', 'Ya puedes cobrar.'); }}
       />
