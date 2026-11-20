@@ -11,6 +11,7 @@
 // =====================================================================
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/src/supabase/client';
 import { useAuthStore } from '@/src/store/useAuthStore';
 
@@ -34,6 +35,7 @@ async function alinearEmpresa(tenantId: string) {
 
 export default function BloqueoSuscripcion() {
   const { tenantId, profile, signOut } = useAuthStore();
+  const router = useRouter();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [enviando, setEnviando] = useState(false);
   const ultimaMarca = useRef(0);
@@ -126,6 +128,10 @@ export default function BloqueoSuscripcion() {
           </TouchableOpacity>
           <TouchableOpacity onPress={() => signOut()} className="items-center py-1">
             <Text className="text-xs text-gray-500">Cerrar sesión</Text>
+          </TouchableOpacity>
+          {/* Google Play: borrar la cuenta tiene que poderse aunque esté bloqueada. */}
+          <TouchableOpacity onPress={() => router.push('/eliminar-cuenta' as never)} className="items-center py-1">
+            <Text className="text-xs text-gray-400 underline">Eliminar mi cuenta</Text>
           </TouchableOpacity>
         </View>
       </View>

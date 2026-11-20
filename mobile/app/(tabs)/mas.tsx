@@ -163,6 +163,12 @@ export default function MasScreen() {
         <Text className="text-accent-red text-lg font-bold">Cerrar Sesion</Text>
       </TouchableOpacity>
 
+      {/* (20/11/2026) Google Play: quien puede crear cuenta en la app tiene que
+          poder borrarla desde la app. Para todos los usuarios. */}
+      <TouchableOpacity className="mt-4 items-center py-2" onPress={() => router.push('/eliminar-cuenta' as never)}>
+        <Text className="text-gray-500 text-sm underline">Eliminar mi cuenta</Text>
+      </TouchableOpacity>
+
       {/* ── QUÉ VERSIÓN ESTÁ CORRIENDO DE VERDAD ──────────────────────
           Antes aquí decía "v1.0.0" escrito a mano, así que decía lo mismo
           en todas las versiones. Cuando hubo que averiguar si el teléfono

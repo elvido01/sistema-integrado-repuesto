@@ -50,7 +50,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <Slot />
       {/* (19/11/2026) Suscripción vencida o empresa en pausa: tapa todo. */}
-      {session && segments[0] !== '(auth)' ? <BloqueoSuscripcion /> : null}
+      {session && segments[0] !== '(auth)' && (segments[0] as string) !== 'eliminar-cuenta' ? <BloqueoSuscripcion /> : null}
       <StatusBar style="auto" />
     </QueryClientProvider>
   );

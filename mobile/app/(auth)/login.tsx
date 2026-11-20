@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 
-const BIOMETRIC_CREDENTIALS_KEY = 'motoflow.biometric.credentials';
+import { BIOMETRIC_CREDENTIALS_KEY } from '@/src/lib/biometria';
 
 export default function LoginScreen() {
   const router = useRouter();
