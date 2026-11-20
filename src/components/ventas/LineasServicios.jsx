@@ -494,7 +494,7 @@ export default function LineasServicios({ items, setItems, cliente, moneda = 'DO
               {t.retI > 0 && <div className="flex justify-between text-amber-800"><span>ITBIS retenido por el cliente</span><span className="font-mono">-{money(t.retI)}</span></div>}
               {t.retS > 0 && <div className="flex justify-between text-amber-800"><span>ISR retenido por el cliente</span><span className="font-mono">-{money(t.retS)}</span></div>}
               <div className="flex justify-between border-t font-black text-emerald-800"><span>Total a pagar (neto)</span><span className="font-mono">{money(t.total - t.retI - t.retS)}</span></div>
-              <div className="text-[10px] text-slate-400">Estimado: la retención definitiva se calcula al grabar. Va a crédito: el cliente paga el neto.</div>
+              <div className="text-[10px] text-slate-400">Estimado: la retención definitiva se calcula al grabar. El cliente paga el neto (de contado o a crédito).</div>
             </>
           )}
           {cliente?.agente_retencion && t.retI + t.retS === 0 && emiteEcf && !pf && (

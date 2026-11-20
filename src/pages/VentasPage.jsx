@@ -63,6 +63,7 @@ const VentasPage = () => {
     vendedor, setVendedor,
     totals,
     cambio,
+    aCobrar,
     resetVenta,
     handleSelectCliente,
     handleSave,
@@ -1111,6 +1112,7 @@ const VentasPage = () => {
         setMontoRecibido={setMontoRecibido}
         cambio={cambio}
         totals={totals}
+        aCobrar={aCobrar}
         onFacturar={handleConfirmAndPrint}
         isSaving={isSaving}
         printFormat={printFormat}

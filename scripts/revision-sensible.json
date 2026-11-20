@@ -332,15 +332,15 @@
     "src/components/ventas/CotizacionSearchModal.jsx": "ea0cda9ca966e217",
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
-    "src/components/ventas/LineasServicios.jsx": "61c17a6ee2e45db3",
+    "src/components/ventas/LineasServicios.jsx": "671500d67680426b",
     "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
-    "src/components/ventas/VentasFooter.jsx": "92e01cc6d3e8d6d4",
+    "src/components/ventas/VentasFooter.jsx": "d937814b113cacba",
     "src/components/ventas/VentasHeader.jsx": "92b4d604ebcc8007",
     "src/components/ventas/VentasTable.jsx": "5f4f6f02114febfa",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "be0f15363bb95976",
+    "src/hooks/useVentas.js": "deaa61e79f7e96fb",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -355,7 +355,7 @@
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "712407d792d03790",
-    "src/pages/Configuracion/CierreCajaPage.jsx": "b1771929f5d7b3aa",
+    "src/pages/Configuracion/CierreCajaPage.jsx": "3ecf5ec40d1f57db",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
@@ -377,7 +377,7 @@
     "src/pages/ReporteComprasPage.jsx": "854bc2b94bec3750",
     "src/pages/ReportesDGIIPage.jsx": "1a7755683bc8601b",
     "src/pages/SolicitudesComprasPage.jsx": "df1e84e13153f69d",
-    "src/pages/VentasPage.jsx": "bc256d138b0ab681",
+    "src/pages/VentasPage.jsx": "d3b80403d6c156b7",
     "src/pages/gps/GpsFinancingPage.jsx": "aafaa511e2938686",
     "src/repositories/compras/ordenesCompraRepository.js": "49a433f44e6b6ec6",
     "src/repositories/inventario/productosRepository.js": "76ff7ca5354624bf",
@@ -452,16 +452,10 @@
     "sql/edu_caja_solo_cobra_ajustes.sql": "b79f4962ece6491a",
     "mobile/src/components/AbrirCajaModal.tsx": "87f3ac5e5ac61f87",
     "sql/apertura_caja.sql": "d1e9b290bca14c98",
-    "src/components/caja/AbrirCajaModal.jsx": "14134503bcfd511c"
+    "src/components/caja/AbrirCajaModal.jsx": "14134503bcfd511c",
+    "sql/contado_con_retencion.sql": "aeb89728ac90e9e9"
   },
   "historial": [
-    {
-      "fecha": "2026-11-06",
-      "nota": "code-review high: RFCE omite Comprador/FormaDePago/ImpuestoAdicional vacios (Firma Invalida E320000000032) + error claro sin totales + test; firmador no se toca (byte-perfect)",
-      "archivos": [
-        "supabase/functions/emitir-fiscal/dgii_rfce_produccion.ts"
-      ]
-    },
     {
       "fecha": "2026-11-06",
       "nota": "code-review high: 10 hallazgos; 9 arreglados (ano completo por estudiante, efectivo en dolares cuenta como efectivo, esperar el ano antes de abrir, recargos al abrir familia y dentro del cobro, RI en el papel, reimpresion con el ano del recibo, anular por rol de la empresa activa, LIMIT 1 con ORDER BY, busqueda sin respuestas viejas); es_tercero en el recibo se deja a proposito (regla: los cobros a terceros no salen de las formulas de efectivo). Probado con BEGIN/ROLLBACK.",
@@ -988,6 +982,18 @@
         "src/pages/ComprasPage.jsx",
         "src/pages/ReciboPagoFinancieraPage.jsx",
         "src/pages/ReporteComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-20",
+      "nota": "code-review high x2 (20/11): contado con retención — 10+10 hallazgos; corregidos: columna persistida retenido_no_cobrado (disparador, al grabar), 6 funciones de dinero al neto + get_ingresos_dealer_mes, banco por el neto, ticket con retención, aviso si la retención real < estimada, centavos, Anulada en caja disponible. Pendientes conocidos: devolución de venta con retención reintegra el total; rodar_ancla_caja fórmula previa distinta (no tocada)",
+      "archivos": [
+        "sql/contado_con_retencion.sql",
+        "src/components/ventas/LineasServicios.jsx",
+        "src/components/ventas/VentasFooter.jsx",
+        "src/hooks/useVentas.js",
+        "src/pages/Configuracion/CierreCajaPage.jsx",
+        "src/pages/VentasPage.jsx"
       ]
     }
   ]

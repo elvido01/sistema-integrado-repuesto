@@ -210,7 +210,7 @@ const CierreCajaPage = () => {
       // Ventas del día
       let ventasQuery = supabase
         .from('facturas')
-        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado, retenido_no_cobrado')
         .eq('tenant_id', tenantId)
         .gte('fecha', startOfDay)
         .lte('fecha', endOfDay);
@@ -231,7 +231,7 @@ const CierreCajaPage = () => {
 
       let ventasMovilesQuery = supabase
         .from('facturas')
-        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado')
+        .select('id, total, itbis, subtotal, descuento, forma_pago, tipo_pago, monto_recibido, cambio, fecha, created_at, notas, estado, retenido_no_cobrado')
         .eq('tenant_id', tenantId)
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
@@ -537,9 +537,17 @@ const CierreCajaPage = () => {
     const totalVentasContado = ventasContado
       .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
 
+    // (20/11/2026) Contado a un cliente que retiene: el cliente pagó el NETO
+    // y lo retenido se lo paga él a la DGII; nunca entra a la caja ni al
+    // banco. El servidor lo anota en facturas.retenido_no_cobrado (0 en
+    // ventas viejas y en las cobradas completas).
+    const retenidoDe = (v) => Math.min(parseFloat(v.retenido_no_cobrado) || 0, parseFloat(v.total) || 0);
+    const netoDe = (v) => Math.max(0, (parseFloat(v.total) || 0) - retenidoDe(v));
+    const totalRetencionesContado = ventasContado.reduce((sum, v) => sum + retenidoDe(v), 0);
+
     const totalVentasContadoMovil = ventasContado
       .filter(isMobileCashSale)
-      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+      .reduce((sum, v) => sum + netoDe(v), 0);
 
     // Ventas de contado cobradas por transferencia/tarjeta/cheque NO entran a la
     // gaveta (van a la cuenta bancaria). Sin tipo_pago = efectivo (histórico).
@@ -549,9 +557,9 @@ const CierreCajaPage = () => {
     };
     const totalVentasContadoNoEfectivo = ventasContado
       .filter(v => !esContadoEfectivo(v))
-      .reduce((sum, v) => sum + (parseFloat(v.total) || 0), 0);
+      .reduce((sum, v) => sum + netoDe(v), 0);
 
-    const totalVentasContadoCaja = Math.max(0, totalVentasContado - totalVentasContadoMovil - totalVentasContadoNoEfectivo);
+    const totalVentasContadoCaja = Math.max(0, totalVentasContado - totalRetencionesContado - totalVentasContadoMovil - totalVentasContadoNoEfectivo);
 
     const totalVentasCredito = ventas
       .filter(v => String(v.forma_pago || '').toUpperCase() === 'CREDITO')
@@ -659,6 +667,7 @@ const CierreCajaPage = () => {
       totalVentasContadoCaja,
       totalVentasContadoMovil,
       totalVentasContadoNoEfectivo,
+      totalRetencionesContado,
       totalVentasCredito,
       totalItbis,
       totalDescuento,
@@ -951,6 +960,7 @@ const CierreCajaPage = () => {
               ${filaResumen('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
               ${filaResumen('Ventas Contado Móvil', resumen?.totalVentasContadoMovil)}
               ${filaResumen('Ventas por Transferencia/Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
+              ${Number(resumen?.totalRetencionesContado) > 0 ? filaResumen('Retenido por clientes (pagan a la DGII)', resumen?.totalRetencionesContado) : ''}
               ${filaResumen('Ventas Crédito', resumen?.totalVentasCredito)}
               ${filaResumen('Total Ventas', resumen?.totalVentas, true)}
               ${Number(resumen?.totalRecibosMovil) > 0 ? `
@@ -1111,6 +1121,7 @@ const CierreCajaPage = () => {
         ${filaPos('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
         ${filaPos('Cuenta Contado Móvil', resumen?.totalVentasContadoMovil)}
         ${filaPos('Ventas Transf./Tarjeta', resumen?.totalVentasContadoNoEfectivo)}
+        ${Number(resumen?.totalRetencionesContado) > 0 ? filaPos('Retenido por clientes', resumen?.totalRetencionesContado) : ''}
         ${filaPos('Ventas Crédito', resumen?.totalVentasCredito)}
         ${filaPos('Total Ventas', resumen?.totalVentas, { bold: true })}
         ${Number(resumen?.totalRecibosMovil) > 0 ? `
@@ -1441,6 +1452,8 @@ const CierreCajaPage = () => {
                   <Fila label="Ventas Contado Caja" value={resumen.totalVentasContadoCaja} />
                   <Fila label="Cuenta Contado Móvil" value={resumen.totalVentasContadoMovil} />
                   <Fila label="Ventas por Transferencia/Tarjeta" value={resumen.totalVentasContadoNoEfectivo} />
+                  {/* (20/11/2026) Contado a clientes que retienen: lo retenido no entra a la caja. */}
+                  <Fila label="Retenido por clientes (pagan a la DGII)" value={resumen.totalRetencionesContado} />
                   <Fila label="Ventas Crédito" value={resumen.totalVentasCredito} />
                   <Fila label="Total Ventas" value={resumen.totalVentas} bold />
                   {/* "Caja" y "Móvil" solo cuando hubo cobros por el móvil: si

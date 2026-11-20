@@ -650,13 +650,25 @@ export const useVentas = () => {
   // render DESPUÉS de que totals cambiara, así que al grabar en el acto el
   // cambio salía calculado contra el total anterior. En FT-3504 se imprimió
   // "CAMBIO: 0.00" habiendo pagado 50 por una factura de 20.
+  // (20/11/2026) De contado a un cliente que retiene (agente de retención,
+  // ej. AMSTAR a Oscar): el cliente paga el NETO; lo retenido lo paga él a
+  // la DGII. Lo que se cobra y el cambio van contra el neto. La factura
+  // sigue siendo de contado; el servidor anota lo que no se cobró en
+  // facturas.retenido_no_cobrado (sql/contado_con_retencion.sql) y la caja,
+  // el Inicio y los flujos lo restan.
+  const aCobrar = useMemo(() => (
+    paymentType === 'contado'
+      ? Math.max(0, Math.round((totals.totalFactura - (Number(retencionEstimada) || 0)) * 100) / 100)
+      : totals.totalFactura
+  ), [paymentType, totals.totalFactura, retencionEstimada]);
+
   const cambio = useMemo(() => {
     const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
     const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
     // Permitir negativos para mostrar "faltante" como cambio negativo.
     // Redondeado al centavo (y sin "-0.00"): ver la validación al grabar.
-    return Math.round((recibido - totals.totalFactura) * 100) / 100 || 0;
-  }, [montoRecibido, pagos, totals.totalFactura]);
+    return Math.round((recibido - aCobrar) * 100) / 100 || 0;
+  }, [montoRecibido, pagos, aCobrar]);
 
   // (09/11/2026) Ventanas y aluminio: la página puede quedarse con el producto
   // escogido para preguntar el color y si va por unidad o por pies
@@ -1067,21 +1079,17 @@ export const useVentas = () => {
         return;
       }
     }
-    // (13/11/2026) Con retención, lo que entra es el neto y la caja cuenta el
-    // total: se factura a crédito y el pago del cliente se registra en Recibos
-    // de Ingreso (el pendiente ya queda en el neto).
-    if (paymentType === 'contado' && retencionEstimada > 0) {
-      toast({ title: 'Factúrela a crédito', description: `El cliente le retiene RD$ ${retencionEstimada.toFixed(2)}: cobra el neto (RD$ ${(totals.totalFactura - retencionEstimada).toFixed(2)}). Póngala a crédito y registre el pago en Recibos de Ingreso.`, variant: 'destructive', duration: 9000 });
-      return;
-    }
-    // Validar que el monto recibido no sea menor al total para ventas de contado
+    // (20/11/2026) Con retención ya se puede de CONTADO (antes obligaba a
+    // crédito, regla 13/11): el cliente paga el neto. Validar que lo recibido
+    // no sea menor a lo que se cobra (el total, o el neto si retiene).
     if (paymentType === 'contado') {
       const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
       const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
       // (15/10/2026) En centavos: 17118.26 recibido contra un total de 17118.2600000001
       // (decimales de la computadora) daba "cambio -0.00" y no dejaba grabar.
-      if (Math.round(recibido * 100) < Math.round(totals.totalFactura * 100)) {
-        toast({ title: 'Monto insuficiente', description: `El monto recibido (RD$ ${recibido.toFixed(2)}) no puede ser menor al total de la factura (RD$ ${totals.totalFactura.toFixed(2)}).`, variant: 'destructive' });
+      if (Math.round(recibido * 100) < Math.round(aCobrar * 100)) {
+        const conRet = Math.round(aCobrar * 100) < Math.round(totals.totalFactura * 100);
+        toast({ title: 'Monto insuficiente', description: `El monto recibido (RD$ ${recibido.toFixed(2)}) no puede ser menor a ${conRet ? `lo que paga el cliente (RD$ ${aCobrar.toFixed(2)}, el neto: él retiene el resto)` : `el total de la factura (RD$ ${totals.totalFactura.toFixed(2)})`}.`, variant: 'destructive' });
         return;
       }
     }
@@ -1401,6 +1409,29 @@ export const useVentas = () => {
         ...(ncfData?.nombre_emisor ? { nombre_emisor_ncf: ncfData.nombre_emisor } : {}),
       };
 
+      // (20/11/2026) La retención la calcula el servidor al grabar las líneas
+      // (recalcular_retenciones_factura): la fila del insert la trae en 0. Solo
+      // si el cliente retiene, se lee antes de imprimir para que el ticket
+      // diga "ITBIS/ISR retenido" y "Total a pagar". Si falla, sale sin ese bloque.
+      if (Number(retencionEstimada) > 0 && activeFactura?.id) {
+        try {
+          const { data: ret, error: retErr } = await supabase.from('facturas')
+            .select('itbis_retenido, isr_retenido').eq('id', activeFactura.id).maybeSingle();
+          if (!retErr && ret) {
+            facturaParaImprimir.itbis_retenido = ret.itbis_retenido;
+            facturaParaImprimir.isr_retenido = ret.isr_retenido;
+            // De contado se cobró contra la ESTIMACIÓN. Si la retención real
+            // es menor, el cliente pagó de menos: la caja lo pedirá completo.
+            const real = (Number(ret.itbis_retenido) || 0) + (Number(ret.isr_retenido) || 0);
+            const falta = Math.round((Number(retencionEstimada) - real) * 100) / 100;
+            if (paymentType === 'contado' && falta > 0.009) {
+              toast({ variant: 'destructive', duration: 15000, title: 'El cliente debe pagar más',
+                description: `La retención real es RD$ ${real.toFixed(2)} (se estimó RD$ ${Number(retencionEstimada).toFixed(2)}). Cóbrele RD$ ${falta.toFixed(2)} más: la caja lo cuenta.` });
+            }
+          }
+        } catch { /* se imprime sin el bloque de retención */ }
+      }
+
       // La única cosa que sí hay que esperar antes de imprimir: la factura de
       // dealer lleva impresos el vehículo y sus pagarés, y eso vive en la
       // solicitud. Es la venta de un motor, no la del mostrador.
@@ -1475,7 +1506,8 @@ export const useVentas = () => {
       // financiera vinculada (ej. Caminero cobra a la 004 de MotoPréstamos).
       if (paymentType === 'contado' && tipoPago && tipoPago !== 'EFECTIVO' && cuentaBancoId && activeFactura?.id) {
         supabase.rpc('registrar_movimiento_bancario_compartido', {
-          p_cuenta_id: cuentaBancoId, p_tipo: 'ENTRADA', p_monto: totals.totalFactura,
+          // Lo que de verdad entró: con retención, el neto (20/11/2026).
+          p_cuenta_id: cuentaBancoId, p_tipo: 'ENTRADA', p_monto: aCobrar,
           p_concepto: `Venta ${activeFactura.numero || ''} (${tipoPago})`.trim(),
           p_referencia: activeFactura.numero ? String(activeFactura.numero) : null,
           p_origen_tipo: 'venta', p_origen_id: activeFactura.id, p_fecha: null,
@@ -2060,6 +2092,7 @@ export const useVentas = () => {
     vendedor, setVendedor,
     totals,
     cambio,
+    aCobrar,
     resetVenta,
     handleSelectCliente,
     handleSave,

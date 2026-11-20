@@ -31,6 +31,7 @@ const VentasFooter = ({
   setMontoRecibido,
   cambio,
   totals,
+  aCobrar,
   onFacturar,
   isSaving,
   printFormat,
@@ -129,13 +130,19 @@ const VentasFooter = ({
     return null;
   }, []);
 
+  // (20/11/2026) Lo que se cobra: el total, o el neto si el cliente retiene.
+  // La regla vive en useVentas (aCobrar); aquí solo se usa.
+  const porCobrar = aCobrar != null && Number.isFinite(Number(aCobrar)) ? Number(aCobrar) : totals.totalFactura;
+  // En centavos: el total trae ruido de decimales (17118.2600000001).
+  const conRetencion = paymentType === 'contado' && Math.round(porCobrar * 100) < Math.round(totals.totalFactura * 100);
+
   const handleFacturar = () => {
     if (paymentType === 'contado') {
       const totalPagos = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
       const recibido = totalPagos + (parseFloat(montoRecibido) || 0);
       // (15/10/2026) En centavos: 17118.26 recibido contra un total de 17118.2600000001
       // (decimales de la computadora) daba "cambio -0.00" y no dejaba grabar.
-      if (Math.round(recibido * 100) < Math.round(totals.totalFactura * 100)) {
+      if (Math.round(recibido * 100) < Math.round(porCobrar * 100)) {
         setAlertOpen(true);
         return;
       }
@@ -181,7 +188,8 @@ const VentasFooter = ({
               <br />
               Total Factura: RD$ {montoConComas(totals.totalFactura)}
               <br />
-              Faltante: RD$ {montoConComas(Math.max(0, totals.totalFactura - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))))}
+              {conRetencion && (<>A cobrar (neto, el cliente retiene): RD$ {montoConComas(porCobrar)}<br /></>)}
+              Faltante: RD$ {montoConComas(Math.max(0, porCobrar - (pagos.reduce((s, p) => s + p.monto, 0) + (parseFloat(montoRecibido) || 0))))}
             </span>
           </AlertDialogDescription>
         </div>
@@ -200,7 +208,7 @@ const VentasFooter = ({
   // cambio, notas, formato) y el mismo Grabar (misma validación de pago).
   if (movil) {
     const pagado = pagos.reduce((s, p) => s + Number(p.monto), 0);
-    const faltaCobrar = Math.max(0, Math.round((totals.totalFactura - pagado) * 100) / 100);
+    const faltaCobrar = Math.max(0, Math.round((porCobrar - pagado) * 100) / 100);
     const hayLineas = Number(totals.totalFactura || 0) > 0;
     const fila = 'flex items-center justify-between py-1 text-sm';
     return (
@@ -238,6 +246,12 @@ const VentasFooter = ({
                   <div className={fila}><span className="text-gray-500">ITBIS</span><span className="font-mono">{montoConComas(totals.totalItbis)}</span></div>
                   {Number(totals.propina) > 0 && <div className={fila}><span className="text-gray-500">Propina</span><span className="font-mono">{montoConComas(totals.propina)}</span></div>}
                   <div className="flex items-center justify-between border-t pt-1 text-lg font-black text-[#c00000]"><span>Total</span><span className="font-mono">RD$ {montoConComas(totals.totalFactura)}</span></div>
+                  {conRetencion && (
+                    <>
+                      <div className={fila}><span className="text-amber-800">Retiene el cliente (paga a la DGII)</span><span className="font-mono text-amber-800">-{montoConComas(totals.totalFactura - porCobrar)}</span></div>
+                      <div className="flex items-center justify-between text-lg font-black text-emerald-800"><span>Cobrar (neto)</span><span className="font-mono">RD$ {montoConComas(porCobrar)}</span></div>
+                    </>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -499,7 +513,7 @@ const VentasFooter = ({
                   const totalPagosActual = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
                   if (val > 0) {
                     const totalConEsteIngreso = totalPagosActual + val;
-                    if (paymentType === 'contado' && totalConEsteIngreso >= totals.totalFactura) {
+                    if (paymentType === 'contado' && totalConEsteIngreso >= porCobrar) {
                       addPago();
                       setTimeout(() => grabarBtnRef.current?.focus(), 50);
                     } else if (paymentType === 'credito') {
@@ -509,7 +523,7 @@ const VentasFooter = ({
                       addPago();
                     }
                   } else {
-                    if (paymentType === 'contado' && totalPagosActual >= totals.totalFactura) {
+                    if (paymentType === 'contado' && totalPagosActual >= porCobrar) {
                       grabarBtnRef.current?.focus();
                     } else if (paymentType === 'credito' && totalPagosActual > 0) {
                       grabarBtnRef.current?.focus();
@@ -607,6 +621,12 @@ const VentasFooter = ({
                 {montoConComas(totals.totalFactura)}
               </span>
             </div>
+            {conRetencion && (
+              <div className="flex flex-col items-end px-2 border-l border-gray-300 leading-tight" title="El cliente retiene ITBIS/ISR y lo paga él a la DGII: se cobra el neto.">
+                <span className="text-[10px] font-bold uppercase text-emerald-800">Cobrar (neto)</span>
+                <span className="font-mono text-[15px] font-black text-emerald-800">{montoConComas(porCobrar)}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 px-2 border-l border-gray-400">
               <Button
                 className="h-8 px-3 text-[12px] font-bold flex gap-1.5 items-center uppercase bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-sm"
