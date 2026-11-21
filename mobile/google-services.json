@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "924696876814",
+    "project_id": "motoflow-29b0a",
+    "storage_bucket": "motoflow-29b0a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:924696876814:android:70fec95976cdca5263695f",
+        "android_client_info": {
+          "package_name": "com.motoflow.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDTFAPmIcsWMxuzSXd7Re_mzBQbZw_HLyw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
