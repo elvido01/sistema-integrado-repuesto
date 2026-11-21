@@ -7,6 +7,21 @@
 // =====================================================================
 import { supabase } from '@/lib/customSupabaseClient';
 import { mediaDeBundle, textosReuso } from '@/lib/textoReuso';
+import { invocarConSesion } from '@/lib/edgeInvoke';
+
+// (21/11/2026) El texto nuevo lo escribe la IA con la VOZ DE LA MARCA
+// (supabase/functions/texto-reuso). Si tarda o falla, queda la plantilla.
+async function textoConVoz(productoId, bundleId) {
+  try {
+    const r = await Promise.race([
+      invocarConSesion('texto-reuso', { producto_id: productoId, bundle_id: bundleId }),
+      new Promise((ok) => { setTimeout(() => ok(null), 15000); }),
+    ]);
+    return r?.textos || null;
+  } catch {
+    return null;
+  }
+}
 
 export const COLUMNAS_JOB_REUSO = 'publication_bundle_id, producto_id, placement, media_type, image_url, media_url, precio_mostrado, textos, completed_at, created_at';
 
@@ -39,10 +54,11 @@ export async function prefillDesdeBundle({ bundleId, jobs = null, productoId = n
   }
   const pid = productoId || js.find((j) => j.producto_id)?.producto_id;
   if (!pid) return { error: 'La promoción anterior no tiene pieza.' };
-  const [{ data: p }, { data: stock }, media] = await Promise.all([
+  const [{ data: p }, { data: stock }, media, conVoz] = await Promise.all([
     supabase.from('productos').select('id, codigo, descripcion, precio').eq('id', pid).maybeSingle(),
     supabase.rpc('get_stock_actual', { producto_uuid: pid }),
     soloLosQueExisten(mediaDeBundle(js)),
+    textoConVoz(pid, bundleId),
   ]);
   if (!p) return { error: 'La pieza ya no está en el catálogo.' };
   if (!media.imagen_feed) return { error: 'El arte anterior ya no está guardado.' };
@@ -54,7 +70,8 @@ export async function prefillDesdeBundle({ bundleId, jobs = null, productoId = n
       sinDescuento: true,
       titulo: p.descripcion,
       media,
-      textos: textosReuso({ descripcion: p.descripcion, precio: p.precio, textosViejos: viejo, semilla }),
+      // La de la IA manda; la plantilla llena la red que falte.
+      textos: { ...textosReuso({ descripcion: p.descripcion, precio: p.precio, textosViejos: viejo, semilla }), ...(conVoz || {}) },
     },
   };
 }

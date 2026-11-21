@@ -69,7 +69,7 @@ export function telefonoDe(textos = {}) {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
-/** Hashtags del texto anterior, sin repetir, máximo 5. */
+/** Hashtags del texto anterior, sin repetir, máximo 3 (voz de la marca). */
 export function hashtagsDe(textos = {}) {
   const todo = Object.values(textos || {}).join(' ');
   const vistos = new Set();
@@ -78,7 +78,7 @@ export function hashtagsDe(textos = {}) {
     const k = sinAcentos(t);
     if (!vistos.has(k)) { vistos.add(k); tags.push(t); }
   }
-  return tags.slice(0, 5);
+  return tags.slice(0, 3);
 }
 
 const dinero = (n) => `RD$ ${Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
