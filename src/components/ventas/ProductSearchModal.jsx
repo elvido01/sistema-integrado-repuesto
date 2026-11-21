@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Loader2, Search, X, Package, PackageX, ArrowRightLeft } from 'lucide-react';
@@ -665,7 +665,9 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
           <div className={`flex-grow overflow-hidden ${movil ? 'px-2 pb-2' : 'px-4 pb-4'}`}>
             <div className="h-full bg-white border rounded-md shadow-sm overflow-hidden flex flex-col">
               {/* Single Horizontal Scroll Container */}
-              <div className="flex-grow overflow-auto scrollbar-thin scrollbar-thumb-slate-300">
+              {/* scroll-pt-12: con los títulos fijos, la fila elegida con las flechas
+                  no queda escondida debajo de ellos. */}
+              <div className="flex-grow overflow-auto scroll-pt-12 scrollbar-thin scrollbar-thumb-slate-300">
                 <div className={movil ? '' : 'min-w-[960px]'}>
                   {movil ? (
                     // (11/11/2026) Teléfono: un toque escoge (en la tabla es doble clic).
@@ -697,8 +699,12 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
                       ))}
                     </div>
                   ) : (
-                  <Table className="w-full table-fixed overflow-visible">
-                    <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
+                  <table className="w-full caption-bottom text-sm table-fixed border-separate border-spacing-0">
+                    {/* (21/11/2026) <table> directo, no el <Table> de ui: ese lo mete en
+                        un div con overflow-auto propio y el encabezado "sticky" quedaba
+                        pegado a ese div, no a la lista que se desplaza: los títulos de
+                        las columnas se iban al bajar. */}
+                    <TableHeader className="sticky top-0 bg-gray-100 z-10 [&_th]:shadow-[inset_0_-1px_0_#cbd5e1]">
                       <TableRow className="hover:bg-transparent border-b">
                         <TableHead className={`font-bold text-gray-700 ${codigosLargos ? 'w-[220px]' : 'w-[150px]'}`}>Código</TableHead>
                         <TableHead className="font-bold text-gray-700 w-[110px]">Referencia</TableHead>
@@ -708,7 +714,7 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
                         <TableHead className="text-right font-bold text-gray-700 w-[140px]">Precio+Imp</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="[&_td]:border-b [&_td]:border-slate-100">
                       {products.map((product, idx) => product._vieja ? (
                         <TableRow
                           key={product.id}
@@ -859,7 +865,7 @@ Al grabar la factura se pasan de ${origen} a esta empresa y salen con el comprob
                         </ContextMenu>
                       ))}
                     </TableBody>
-                  </Table>
+                  </table>
                   )}
                   <div ref={loaderRef} className="h-12 flex justify-center items-center bg-white">
                     {loading && <Loader2 className="w-5 h-5 animate-spin text-blue-600" />}

@@ -333,7 +333,7 @@
     "src/components/ventas/DocumentSearchModal.jsx": "df609514b982d18a",
     "src/components/ventas/FacturacionModal.jsx": "688ecef92dd1addc",
     "src/components/ventas/LineasServicios.jsx": "671500d67680426b",
-    "src/components/ventas/ProductSearchModal.jsx": "9e0d52ea0eb3c5a0",
+    "src/components/ventas/ProductSearchModal.jsx": "8d18bbc63f285b1b",
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "d937814b113cacba",
     "src/components/ventas/VentasHeader.jsx": "92b4d604ebcc8007",
@@ -468,14 +468,6 @@
     "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3"
   },
   "historial": [
-    {
-      "fecha": "2026-11-09",
-      "nota": "code-review high: 8 hallazgos (activo/reemplazado_por, nulls, carrera de busqueda, mayusculas, re-anular, tipado, codigo muerto) arreglados; 2 query extra aceptadas",
-      "archivos": [
-        "mobile/app/existencia/index.tsx",
-        "mobile/app/solicitudes-compra/index.tsx"
-      ]
-    },
     {
       "fecha": "2026-11-09",
       "nota": "code-review high: 10 hallazgos; arreglados 9 (id de linea PIES en orden de compra, lineas repetidas al reabrir, precio de la presentacion en el modal, agente sin modal, equivalentes, colores desactivados se reactivan, detalle movil, una sola llamada, existencia del color); aceptado: redondeo a 4 decimales en barras que no dividen exacto (20 pies es exacto)",
@@ -1024,6 +1016,13 @@
       "nota": "code-review high (encabezado de Compras en dos cajas): corregidos — Detalles más ancho entre 1024-1535 px, Suplidor primero en el Tab (a la derecha en pantalla), F3 del suplidor ya no abre también la búsqueda de productos, sin id interno como nombre, puntos suspensivos en dirección y listas, selector de retención único. Medido: 130 px de alto a 1024 y 1600.",
       "archivos": [
         "src/components/compras/CompraHeader.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-21",
+      "nota": "code-review high: ProductSearchModal títulos fijos — corregido: fila elegida con flechas tapada por el encabezado (scroll-pt-12) y separador del encabezado (border-separate + inset shadow); preexistentes sin tocar: Table de ui rompe sticky en otras pantallas y div dentro de tr en fila de empresa vieja",
+      "archivos": [
+        "src/components/ventas/ProductSearchModal.jsx"
       ]
     }
   ]
