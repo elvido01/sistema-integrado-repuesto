@@ -15,7 +15,7 @@ import ClienteSearchModal from '@/components/ventas/ClienteSearchModal';
 // ── Documentación (misma tabla/bucket que Documentación Cliente) ──
 const BUCKET = 'documentacion-clientes';
 // (20/11/2026) Lista compartida con Documentación Cliente (incluye "Registro DGII" donde aplica).
-import { TODOS_DOC_FIELDS, camposDocumentacion, gridDocumentos } from '@/lib/documentosCliente';
+import { TODOS_DOC_FIELDS, camposDocumentacion, gridDocumentos, guardarDocumentacion, borrarDocumentacion } from '@/lib/documentosCliente';
 const ESTADOS_DOC = ['EN TRAMITE', 'ENTREGADA', 'EN CAMINERO MOTORS'];
 const estadoBadge = (estado) => ({
   'EN TRAMITE': 'bg-red-50 text-red-700 border-red-200',
@@ -269,19 +269,6 @@ const NotasComentariosPage = () => {
     setDocSaving(true);
     try {
       const recordId = docEditing?.id || crypto.randomUUID();
-      const uploaded = {};
-      for (const field of TODOS_DOC_FIELDS) {
-        const file = docFiles[field.key];
-        if (!file) continue;
-        const ext = file.name.split('.').pop() || 'jpg';
-        const path = `${tenantId}/${recordId}/${field.key.replace('_path', '')}-${Date.now()}.${ext}`;
-        const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type });
-        if (error) throw new Error(`No se pudo subir ${field.label}: ${error.message}`);
-        if (docEditing?.[field.key]) {
-          await supabase.storage.from(BUCKET).remove([docEditing[field.key]]).catch(() => {});
-        }
-        uploaded[field.key] = path;
-      }
 
       // El cliente NO se re-digita: viene del cliente seleccionado (campos
       // unificados). Editar un registro de la empresa aliada no se lo apropia.
@@ -299,11 +286,10 @@ const NotasComentariosPage = () => {
         notas: docEditing?.notas ?? null,
         updated_at: new Date().toISOString(),
         created_by: docEditing?.created_by || user?.id || null,
-        ...uploaded,
       };
 
-      const { error } = await supabase.from('documentacion_clientes').upsert(payload, { onConflict: 'id' });
-      if (error) throw error;
+      // (21/11/2026) Sube, graba y SOLO entonces borra las imágenes reemplazadas.
+      await guardarDocumentacion({ tenantId, recordId, files: docFiles, anterior: docEditing, payload });
 
       toast({ title: 'Documentación guardada' });
       cargarListadoGeneral();
@@ -318,10 +304,8 @@ const NotasComentariosPage = () => {
   const eliminarDoc = async (record) => {
     if (!window.confirm(`¿Borrar la documentación del chasis ${record.chasis || '(sin chasis)'}?`)) return;
     try {
-      const paths = TODOS_DOC_FIELDS.map((f) => record[f.key]).filter(Boolean);
-      if (paths.length) await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
-      const { error } = await supabase.from('documentacion_clientes').delete().eq('id', record.id);
-      if (error) throw error;
+      // (21/11/2026) Primero el registro (comprobado); después sus imágenes.
+      await borrarDocumentacion(record);
       toast({ title: 'Registro eliminado' });
       cargarListadoGeneral();
       if (cliente) cargar(cliente.id, cliente.rnc);
