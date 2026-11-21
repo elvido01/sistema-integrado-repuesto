@@ -15,7 +15,7 @@ import { Helmet } from 'react-helmet';
 import {
   Loader2, RefreshCw, ShieldCheck, Bot, Database, Sparkles, Check, X,
   MessageSquarePlus, AlertTriangle, Clock, ChevronRight, RotateCcw, Ban, Send,
-  Cpu, Cloud, Laptop, Undo2, PlugZap, ClipboardList,
+  Cpu, Cloud, Laptop, Undo2, PlugZap, ClipboardList, CalendarDays, BarChart3, Package, Palette, Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -242,6 +242,15 @@ const Etiqueta = ({ mapa, valor }) => {
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${e.cls}`}>{e.txt}</span>;
 };
 
+const CLAVE_PESTANA = 'equipoIA.pestana';
+const PESTANAS = [
+  { id: 'hoy', nombre: 'Hoy', icono: CalendarDays, ayuda: 'Las 3 del día, lo que espera tu aprobación y publicar.' },
+  { id: 'resultados', nombre: 'Resultados', icono: BarChart3, ayuda: 'Qué publicación vende, códigos, link de la bio y videos publicados.' },
+  { id: 'inventario', nombre: 'Inventario', icono: Package, ayuda: 'Fotos que faltan, agotados que se venden y lo que anuncia el suplidor.' },
+  { id: 'estilo', nombre: 'Estilo', icono: Palette, ayuda: 'Reglas del arte, piezas modelo y reels modelo.' },
+  { id: 'equipo', nombre: 'Equipo', icono: Users, ayuda: 'Los agentes, su motor y la bitácora de trabajos.' },
+];
+
 const EquipoIAPage = () => {
   const { toast } = useToast();
   const [data, setData] = useState(null);
@@ -262,6 +271,25 @@ const EquipoIAPage = () => {
   const [verVideosAnteriores, setVerVideosAnteriores] = useState(false);
   // La pieza aceptada arriba llena el formulario de publicar de abajo.
   const [prefillPromo, setPrefillPromo] = useState(null);
+  const [pestana, setPestana] = useState(() => {
+    try {
+      const v = localStorage.getItem(CLAVE_PESTANA);
+      return PESTANAS.some((t) => t.id === v) ? v : 'hoy';
+    } catch { return 'hoy'; }
+  });
+  const cambiarPestana = useCallback((id) => {
+    setPestana(id);
+    try { localStorage.setItem(CLAVE_PESTANA, id); } catch { /* sin almacenamiento: solo esta vez */ }
+  }, []);
+  // Una pieza aceptada (Paso 2 o reutilizada) va al formulario de publicar.
+  const usarEnPublicar = useCallback((p) => {
+    // Objeto nuevo cada vez: aceptar la misma pieza dos veces vuelve a
+    // llenar el formulario.
+    setPrefillPromo({ ...p, _en: Date.now() });
+    cambiarPestana('hoy');
+    setTimeout(() => document.getElementById('publicar-promocion')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+  }, [cambiarPestana]);
   // "Verla arriba" desde la bandeja: lleva el encargo al paso 2.
   const [enfocarPromo, setEnfocarPromo] = useState(null);
 
@@ -529,494 +557,517 @@ const EquipoIAPage = () => {
         </Button>
       </div>
 
-      {/* (05/10/2026) Las 3 del día que elige Hermes: se revisan en el Paso 2. */}
-      <PublicacionDiaria
-        trabajos={data?.trabajos}
-        onRevisar={(trabajoId) => setEnfocarPromo({ trabajoId, en: Date.now() })}
-      />
-
-      {/* (01/11/2026) El video horizontal del fin de semana con las piezas publicadas. */}
-      <PiezasDeLaSemana />
-
-      {/* (10/10/2026) ¿Qué publicación vende? Solo con feat_medicion_publicaciones. */}
-      <EfectividadPublicaciones />
-
-      {/* Lo primero que se mira cada mañana: arriba y en fila, las cinco
-          de un vistazo. Antes vivía apilado en la columna de la izquierda y
-          había que bajar la pantalla para ver el resto. */}
-      <RecomendacionesDelDia
-        trabajos={data?.trabajos}
-        enfocar={enfocarPromo}
-        // Con una promoción aprobada sin publicar en el Paso 3, el Paso 2 no
-        // retoma otro encargo solo (el dueño veía el Havoline arriba y el
-        // Motul abajo y parecía que las promociones se mezclaban).
-        pausarRetomar={!!prefillPromo}
-        onEncargado={() => cargar(true)}
-        onUsar={(p) => {
-          // Objeto nuevo cada vez: aceptar la misma pieza dos veces vuelve a
-          // llenar el formulario.
-          setPrefillPromo({ ...p, _en: Date.now() });
-          setTimeout(() => document.getElementById('publicar-promocion')
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
-        }}
-      />
-
-      {/* Piezas sin foto: cinco al día. Sin foto no entran al Paso 1. */}
-      <FotosDelDia />
-
-      {/* Lo que se vende y no está: no se promociona y se pide. */}
-      <AgotadosQueSeVenden />
-
-      {/* Lo que Pedro Racing anuncia: la demanda que él crea, para pedirla o promocionarla ya. */}
-      <AnunciosDelSuplidor onEncargado={() => cargar(true)} />
-
-      {/* Cómo debe verse una promoción: las reglas que el Creativo lee y las
-          piezas modelo que mira. Antes vivían separadas (una arriba, otra
-          abajo) y había además "Tus referencias de diseño", que nunca se usó
-          (0 imágenes al 01/10) y decía lo mismo que las piezas modelo. */}
-      <div className="mb-4 grid items-start gap-3 lg:grid-cols-2">
-        <EspecificacionesArte />
-        <PiezasModelo />
+      {/* (21/11/2026) El dueño: "tiene demasiada información y confunde".
+          Antes eran ~15 cajas una debajo de otra. Ahora arriba solo lo de
+          HOY y el resto en pestañas. Las pestañas se esconden, no se
+          desmontan: lo escrito en el formulario de publicar no se pierde. */}
+      <div className="sticky top-0 z-10 -mx-3 mb-4 border-b bg-slate-100/95 px-3 pt-1 backdrop-blur md:-mx-4 md:px-4" role="tablist" aria-label="Secciones de Equipo IA">
+        <div className="flex gap-1 overflow-x-auto">
+          {PESTANAS.map((t) => {
+            const n = t.id === 'hoy' ? pendientes.length : t.id === 'equipo' ? atascos.length : 0;
+            const activa = pestana === t.id;
+            return (
+              <button key={t.id} type="button" role="tab" aria-selected={activa}
+                onClick={() => cambiarPestana(t.id)}
+                title={t.ayuda}
+                className={`flex shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-2 text-sm font-semibold transition-colors ${activa ? 'border-violet-600 bg-white text-violet-700' : 'border-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700'}`}>
+                <t.icono className="h-4 w-4" />
+                {t.nombre}
+                {n > 0 && (
+                  <span className={`rounded-full px-1.5 text-[10px] font-bold text-white ${t.id === 'equipo' ? 'bg-red-500' : 'bg-violet-600'}`}>{n}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Lo mismo para video: reels que el dueño admira y la receta de cada uno. */}
-      <ReelsModelo />
+      {/* ── HOY: las 3 del día, lo que espera aprobación, Paso 1-2 y publicar ── */}
+      <div className={pestana === 'hoy' ? '' : 'hidden'} role="tabpanel">
+        <PublicacionDiaria
+          trabajos={data?.trabajos}
+          onRevisar={(trabajoId) => setEnfocarPromo({ trabajoId, en: Date.now() })}
+          onReusar={usarEnPublicar}
+        />
 
-      <PromocionPublicar prefill={prefillPromo} onLibre={() => setPrefillPromo(null)} />
+        {/* ── D · APROBACIONES: solo si hay algo ──────────────────────
+            Las promociones del panel se aprueban arriba, en el paso 2. Esta
+            caja queda para lo que Hermes prepare por otro camino. */}
+        {pendientes.length > 0 && (
+          <div className="mb-4 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-800">Esperando tu aprobación</h2>
+              {pendientes.length > 0 && (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                  {pendientes.length}
+                </span>
+              )}
+            </div>
 
-      {/* El código de cada promoción y lo que vendió: dice qué red trae gente. */}
-      <CodigosDePromocion />
+            <div className="space-y-3">
+              {pendientes.map((ap) => (promoDelPanel(ap) ? (
+                <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                  <p className="text-xs font-bold text-slate-800"><Texto>{ap.trabajo_titulo || ap.accion}</Texto></p>
+                  <p className="mt-1 text-[11px] text-slate-600">
+                    Las promociones se aprueban arriba, en el <b>paso 2</b>: ahí ves la imagen grande y, al
+                    aprobarla, el formulario de publicar se llena solo.
+                  </p>
+                  <Button size="sm" variant="outline" className="mt-2"
+                    onClick={() => setEnfocarPromo({ trabajoId: ap.trabajo_id, en: Date.now() })}>
+                    Verla arriba
+                  </Button>
+                </div>
+              ) : (
+                <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                  <div className="mb-1 flex items-start justify-between gap-2">
+                    <p className="text-xs font-bold text-slate-800"><Texto>{ap.accion}</Texto></p>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                      ap.riesgo === 'alto' ? 'bg-red-100 text-red-700'
+                        : ap.riesgo === 'bajo' ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-700'}`}>
+                      riesgo {ap.riesgo}
+                    </span>
+                  </div>
+                  <p className="mb-1 text-[11px] text-slate-600">
+                    Lo preparó <b>{NOMBRE_CORTO[ap.preparado_por] || ap.preparado_por}</b>
+                    {ap.revision_num > 1 ? ` · revisión ${ap.revision_num}` : ''}
+                  </p>
+                  {ap.motivo && <p className="mb-1 text-[11px] text-slate-600"><Texto>{ap.motivo}</Texto></p>}
+                  {ap.impacto && (
+                    <p className="mb-2 text-[11px] text-slate-500">Impacto: <Texto>{ap.impacto}</Texto></p>
+                  )}
 
-      {/* La página pública de promociones para la bio de cada red. */}
-      <LinkEnLaBio />
+                  {ap.contenido && Object.keys(ap.contenido).length > 0 && (
+                    <BorradorPromocion contenido={ap.contenido} aprobacionId={ap.id}
+                      onGuardado={() => cargar(true)} />
+                  )}
 
-      <section id="videos-metricool" className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Videos de TikTok y YouTube">
-        <h3 className="text-xs font-bold text-slate-700">TikTok y YouTube publicados mediante Metricool</h3>
-        <p className="mb-3 text-xs text-slate-500">Se muestran los {PUBLICACIONES_RECIENTES} videos más recientes de cada red. Su presencia aquí no significa que formaran parte de una orden de Hermes.</p>
-        {errorMetricool ? (
-          <p className="text-xs text-amber-700">No se pudo consultar el historial de Metricool en MotoFlow.</p>
-        ) : videosMetricool.length === 0 ? (
-          <p className="text-xs text-slate-500">Todavía no hay videos de TikTok o YouTube verificados en este registro.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {videosVisibles.map((video) => (
-              <div key={video.id} className="rounded-lg border border-slate-200 p-2 text-xs">
-                <p className="truncate font-semibold text-slate-700"><Texto>{video.title || 'Video sin título'}</Texto></p>
-                <p className="text-slate-500">
-                  {video.platform === 'tiktok' ? 'TikTok · video vertical' : video.post_type === 'short' ? 'YouTube · Short' : 'YouTube · video'}
-                </p>
-                <p className="text-slate-400">
-                  {video.published_at
-                    ? `Publicado ${new Date(video.published_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`
-                    : `Fecha de publicación no informada · verificado ${new Date(video.verified_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`}
-                </p>
-                <p className="font-semibold text-emerald-700">Publicado y verificado</p>
-                <a className="text-blue-700 underline" href={enlaceVideoVerificado(video)} target="_blank" rel="noreferrer">Ver video</a>
-              </div>
-            ))}
+                  {cambios.id === ap.id ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={cambios.texto}
+                        onChange={(e) => setCambios({ id: ap.id, texto: e.target.value })}
+                        placeholder="Qué hay que cambiar"
+                        rows={2}
+                        className="text-xs"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" className="flex-1"
+                          onClick={() => decidir(ap.id, 'changes_requested', cambios.texto)}>
+                          Enviar cambios
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setCambios({ id: null, texto: '' })}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => decidir(ap.id, 'approved')}>
+                        <Check className="mr-1 h-3 w-3" /> Aprobar
+                      </Button>
+                      {/* El orden importa: "pedir cambios" es lo que se
+                          quiere nueve de cada diez veces, y descartar cierra
+                          el trabajo entero. Poner el rojo en medio invitaba a
+                          usarlo para decir "esto no me gusta". */}
+                      <Button size="sm" variant="outline" className="flex-1"
+                        onClick={() => setCambios({ id: ap.id, texto: '' })}>
+                        Pedir cambios
+                      </Button>
+                      <Button size="sm" variant="outline" className="flex-1 border-red-200 text-red-700"
+                        title="Cierra el trabajo entero. Si solo quieres otra versión, usa Pedir cambios."
+                        onClick={() => decidir(ap.id, 'rejected')}>
+                        <X className="mr-1 h-3 w-3" /> Descartar todo
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )))}
+            </div>
           </div>
         )}
-        {!errorMetricool && videosVisibles.length < videosMetricool.length && (
-          <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
-            onClick={() => setVerVideosAnteriores(true)}>
-            Ver videos anteriores
-          </button>
-        )}
-        {!errorMetricool && verVideosAnteriores && videosMetricool.length > 0 && (
-          <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
-            onClick={() => setVerVideosAnteriores(false)}>
-            Ocultar videos anteriores
-          </button>
-        )}
-      </section>
 
-      {/* ── A · LAS TRES TARJETAS ──────────────────────────────────── */}
-      <div className="mb-4 grid gap-3 md:grid-cols-3">
-        {agentes.map((a) => {
-          const Icon = ICONO[a.clave] || Bot;
-          return (
-            <div key={a.clave} className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-start gap-3">
-                <div className="rounded-lg bg-slate-100 p-2"><Icon className="h-5 w-5 text-slate-600" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate text-sm font-bold text-slate-800"><Texto>{a.nombre}</Texto></h2>
-                    <Etiqueta mapa={ESTADO_AGENTE} valor={a.estado} />
+
+        <RecomendacionesDelDia
+          trabajos={data?.trabajos}
+          enfocar={enfocarPromo}
+          // Con una promoción aprobada sin publicar en el Paso 3, el Paso 2 no
+          // retoma otro encargo solo (el dueño veía el Havoline arriba y el
+          // Motul abajo y parecía que las promociones se mezclaban).
+          pausarRetomar={!!prefillPromo}
+          onEncargado={() => cargar(true)}
+          onUsar={usarEnPublicar}
+        />
+
+        <PromocionPublicar prefill={prefillPromo} onLibre={() => setPrefillPromo(null)} />
+      </div>
+
+      {/* ── RESULTADOS: qué vende, códigos, link de la bio, videos ── */}
+      <div className={pestana === 'resultados' ? '' : 'hidden'} role="tabpanel">
+        {/* (10/10/2026) ¿Qué publicación vende? Solo con feat_medicion_publicaciones. */}
+        <EfectividadPublicaciones />
+        {/* (01/11/2026) El video horizontal del fin de semana con las piezas publicadas. */}
+        <PiezasDeLaSemana />
+        {/* El código de cada promoción y lo que vendió: dice qué red trae gente. */}
+        <CodigosDePromocion />
+        {/* La página pública de promociones para la bio de cada red. */}
+        <LinkEnLaBio />
+        <section id="videos-metricool" className="mb-4 rounded-xl border bg-white p-4 shadow-sm" aria-label="Videos de TikTok y YouTube">
+          <h3 className="text-xs font-bold text-slate-700">TikTok y YouTube publicados mediante Metricool</h3>
+          <p className="mb-3 text-xs text-slate-500">Se muestran los {PUBLICACIONES_RECIENTES} videos más recientes de cada red. Su presencia aquí no significa que formaran parte de una orden de Hermes.</p>
+          {errorMetricool ? (
+            <p className="text-xs text-amber-700">No se pudo consultar el historial de Metricool en MotoFlow.</p>
+          ) : videosMetricool.length === 0 ? (
+            <p className="text-xs text-slate-500">Todavía no hay videos de TikTok o YouTube verificados en este registro.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {videosVisibles.map((video) => (
+                <div key={video.id} className="rounded-lg border border-slate-200 p-2 text-xs">
+                  <p className="truncate font-semibold text-slate-700"><Texto>{video.title || 'Video sin título'}</Texto></p>
+                  <p className="text-slate-500">
+                    {video.platform === 'tiktok' ? 'TikTok · video vertical' : video.post_type === 'short' ? 'YouTube · Short' : 'YouTube · video'}
+                  </p>
+                  <p className="text-slate-400">
+                    {video.published_at
+                      ? `Publicado ${new Date(video.published_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`
+                      : `Fecha de publicación no informada · verificado ${new Date(video.verified_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' })}`}
+                  </p>
+                  <p className="font-semibold text-emerald-700">Publicado y verificado</p>
+                  <a className="text-blue-700 underline" href={enlaceVideoVerificado(video)} target="_blank" rel="noreferrer">Ver video</a>
+                </div>
+              ))}
+            </div>
+          )}
+          {!errorMetricool && videosVisibles.length < videosMetricool.length && (
+            <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+              onClick={() => setVerVideosAnteriores(true)}>
+              Ver videos anteriores
+            </button>
+          )}
+          {!errorMetricool && verVideosAnteriores && videosMetricool.length > 0 && (
+            <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+              onClick={() => setVerVideosAnteriores(false)}>
+              Ocultar videos anteriores
+            </button>
+          )}
+        </section>
+
+      </div>
+
+      {/* ── INVENTARIO: lo que alimenta a Hermes ── */}
+      <div className={pestana === 'inventario' ? '' : 'hidden'} role="tabpanel">
+        {/* Piezas sin foto: cinco al día. Sin foto no entran al Paso 1. */}
+        <FotosDelDia />
+        {/* Lo que se vende y no está: no se promociona y se pide. */}
+        <AgotadosQueSeVenden />
+        {/* Lo que Pedro Racing anuncia: la demanda que él crea, para pedirla o promocionarla ya. */}
+        <AnunciosDelSuplidor onEncargado={() => cargar(true)} />
+      </div>
+
+      {/* ── ESTILO: cómo debe verse una promoción ── */}
+      <div className={pestana === 'estilo' ? '' : 'hidden'} role="tabpanel">
+        <div className="mb-4 grid items-start gap-3 lg:grid-cols-2">
+          <EspecificacionesArte />
+          <PiezasModelo />
+        </div>
+        {/* Lo mismo para video: reels que el dueño admira y la receta de cada uno. */}
+        <ReelsModelo />
+      </div>
+
+      {/* ── EQUIPO: los agentes, su motor y la bitácora ── */}
+      <div className={pestana === 'equipo' ? '' : 'hidden'} role="tabpanel">
+        {/* ── A · LAS TRES TARJETAS ──────────────────────────────────── */}
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          {agentes.map((a) => {
+            const Icon = ICONO[a.clave] || Bot;
+            return (
+              <div key={a.clave} className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-start gap-3">
+                  <div className="rounded-lg bg-slate-100 p-2"><Icon className="h-5 w-5 text-slate-600" /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="truncate text-sm font-bold text-slate-800"><Texto>{a.nombre}</Texto></h2>
+                      <Etiqueta mapa={ESTADO_AGENTE} valor={a.estado} />
+                    </div>
+                    <p className="text-[11px] text-slate-500"><Texto>{a.rol_visible}</Texto></p>
                   </div>
-                  <p className="text-[11px] text-slate-500"><Texto>{a.rol_visible}</Texto></p>
                 </div>
-              </div>
 
-              {a.clave === 'jarvis' && (
-                <div className="mb-2 inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                  <Database className="h-3 w-3" /> Acceso exclusivo a MotoFlow
-                </div>
-              )}
+                {a.clave === 'jarvis' && (
+                  <div className="mb-2 inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                    <Database className="h-3 w-3" /> Acceso exclusivo a MotoFlow
+                  </div>
+                )}
 
-              <p className="mb-3 text-[11px] leading-snug text-slate-600"><Texto>{a.descripcion}</Texto></p>
+                <p className="mb-3 text-[11px] leading-snug text-slate-600"><Texto>{a.descripcion}</Texto></p>
 
-              <dl className="space-y-1 border-t pt-2 text-[11px]">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-400">Tarea actual</dt>
-                  <dd className="truncate text-right text-slate-700">
-                    <Texto>{a.tarea_actual || '—'}</Texto>
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-400">Última actividad</dt>
-                  <dd className="text-slate-700">{hace(a.ultima_actividad)}</dd>
-                </div>
-                {a.clave === 'comercial_creativo' && (
+                <dl className="space-y-1 border-t pt-2 text-[11px]">
                   <div className="flex justify-between gap-2">
-                    <dt className="text-slate-400">Borradores pendientes</dt>
-                    <dd className={`font-bold ${Number(a.borradores_pendientes) > 0 ? 'text-violet-700' : 'text-slate-700'}`}>
-                      {a.borradores_pendientes || 0}
+                    <dt className="text-slate-400">Tarea actual</dt>
+                    <dd className="truncate text-right text-slate-700">
+                      <Texto>{a.tarea_actual || '—'}</Texto>
                     </dd>
                   </div>
-                )}
-              </dl>
-
-              {/* ── EL MOTOR ────────────────────────────────────────
-                  Solo aparece si la base ya tiene las columnas. Antes de
-                  correr la migración la tarjeta se ve como siempre en vez
-                  de enseñar un motor vacío. */}
-              {a.proveedor && (
-                <div className="mt-3 rounded-lg border bg-slate-50/70 p-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Motor</p>
-                      <p className="truncate text-[11px] font-semibold text-slate-700">
-                        <Texto>{MOTOR[a.proveedor]?.txt || a.proveedor}</Texto>
-                        <span className="font-normal text-slate-500"> · {etiquetaModelo(a.proveedor, a.modelo)}</span>
-                      </p>
-                    </div>
-                    <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]"
-                      onClick={() => abrirMotor(a)}>
-                      <Cpu className="mr-1 h-3 w-3" /> Cambiar
-                    </Button>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-400">Última actividad</dt>
+                    <dd className="text-slate-700">{hace(a.ultima_actividad)}</dd>
                   </div>
-
-                  {/* Hermes no se atiende desde aquí: su proceso es el suyo. */}
-                  {a.clave !== 'hermes' && (
-                    <QuienAtiende
-                      w={workers.find((w) => w.agente === a.clave)}
-                      agente={a.clave}
-                      ejecutaEn={a.ejecuta_en}
-                      compacto
-                    />
+                  {a.clave === 'comercial_creativo' && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-400">Borradores pendientes</dt>
+                      <dd className={`font-bold ${Number(a.borradores_pendientes) > 0 ? 'text-violet-700' : 'text-slate-700'}`}>
+                        {a.borradores_pendientes || 0}
+                      </dd>
+                    </div>
                   )}
+                </dl>
 
-                  {a.atiende_widget && a.proveedor_widget !== a.proveedor && (
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      El botón flotante sigue con {MOTOR[a.proveedor_widget]?.txt || a.proveedor_widget}.
-                    </p>
-                  )}
+                {/* ── EL MOTOR ────────────────────────────────────────
+                    Solo aparece si la base ya tiene las columnas. Antes de
+                    correr la migración la tarjeta se ve como siempre en vez
+                    de enseñar un motor vacío. */}
+                {a.proveedor && (
+                  <div className="mt-3 rounded-lg border bg-slate-50/70 p-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Motor</p>
+                        <p className="truncate text-[11px] font-semibold text-slate-700">
+                          <Texto>{MOTOR[a.proveedor]?.txt || a.proveedor}</Texto>
+                          <span className="font-normal text-slate-500"> · {etiquetaModelo(a.proveedor, a.modelo)}</span>
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]"
+                        onClick={() => abrirMotor(a)}>
+                        <Cpu className="mr-1 h-3 w-3" /> Cambiar
+                      </Button>
+                    </div>
 
-                  {a.motor_email && (
-                    <p className="mt-1 truncate text-[10px] text-slate-400">
-                      Cambiado por <Texto>{a.motor_email}</Texto> {hace(a.motor_en)}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                    {/* Hermes no se atiende desde aquí: su proceso es el suyo. */}
+                    {a.clave !== 'hermes' && (
+                      <QuienAtiende
+                        w={workers.find((w) => w.agente === a.clave)}
+                        agente={a.clave}
+                        ejecutaEn={a.ejecuta_en}
+                        compacto
+                      />
+                    )}
 
-      {/* ── D · APROBACIONES: solo si hay algo ──────────────────────
-          Las promociones del panel se aprueban arriba, en el paso 2. Esta
-          caja queda para lo que Hermes prepare por otro camino. */}
-      {pendientes.length > 0 && (
-        <div className="mb-4 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-800">Esperando tu aprobación</h2>
-            {pendientes.length > 0 && (
-              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                {pendientes.length}
+                    {a.atiende_widget && a.proveedor_widget !== a.proveedor && (
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        El botón flotante sigue con {MOTOR[a.proveedor_widget]?.txt || a.proveedor_widget}.
+                      </p>
+                    )}
+
+                    {a.motor_email && (
+                      <p className="mt-1 truncate text-[10px] text-slate-400">
+                        Cambiado por <Texto>{a.motor_email}</Texto> {hace(a.motor_en)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── C/E · BITÁCORA DEL EQUIPO ─────────────────────────────────
+            (01/10) Trabajos activos, Historial, "Pedirle algo" y las órdenes
+            de publicación repetían lo de arriba: los 9 trabajos de 30 días
+            fueron promociones del panel, que ya se siguen en la tarjeta del
+            encargo y en el Paso 4. Aquí quedan para lo único que solo se hace
+            aquí: ver por qué falló, reintentar o cancelar. Se abre sola si
+            algo está atascado o falló. */}
+        <details className="mb-4 rounded-xl border bg-white shadow-sm" open={bitacoraAbierta}
+          onToggle={(e) => setBitacoraAbierta(e.currentTarget.open)}>
+          <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-4 py-3 text-sm font-bold text-slate-800">
+            <ClipboardList className="h-4 w-4 text-slate-500" />
+            Bitácora del equipo
+            <span className="text-[11px] font-normal text-slate-400">
+              {activos.length} en curso · {trabajos.length} en el historial
+            </span>
+            {problemas > 0 && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                {problemas} con problema
               </span>
             )}
-          </div>
+          </summary>
+          <div className="grid gap-4 border-t p-4 lg:grid-cols-5">
+            <div className="space-y-4 lg:col-span-3">
+              {activos.length > 0 && (
+                <div className="rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-sm font-bold text-slate-800">Trabajos activos</h2>
+                    <span className="text-[11px] text-slate-400">{activos.length} en curso</span>
+                  </div>
 
-          <div className="space-y-3">
-            {pendientes.map((ap) => (promoDelPanel(ap) ? (
-              <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
-                <p className="text-xs font-bold text-slate-800"><Texto>{ap.trabajo_titulo || ap.accion}</Texto></p>
-                <p className="mt-1 text-[11px] text-slate-600">
-                  Las promociones se aprueban arriba, en el <b>paso 2</b>: ahí ves la imagen grande y, al
-                  aprobarla, el formulario de publicar se llena solo.
-                </p>
-                <Button size="sm" variant="outline" className="mt-2"
-                  onClick={() => setEnfocarPromo({ trabajoId: ap.trabajo_id, en: Date.now() })}>
-                  Verla arriba
-                </Button>
-              </div>
-            ) : (
-              <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
-                <div className="mb-1 flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold text-slate-800"><Texto>{ap.accion}</Texto></p>
-                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                    ap.riesgo === 'alto' ? 'bg-red-100 text-red-700'
-                      : ap.riesgo === 'bajo' ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-amber-100 text-amber-700'}`}>
-                    riesgo {ap.riesgo}
-                  </span>
-                </div>
-                <p className="mb-1 text-[11px] text-slate-600">
-                  Lo preparó <b>{NOMBRE_CORTO[ap.preparado_por] || ap.preparado_por}</b>
-                  {ap.revision_num > 1 ? ` · revisión ${ap.revision_num}` : ''}
-                </p>
-                {ap.motivo && <p className="mb-1 text-[11px] text-slate-600"><Texto>{ap.motivo}</Texto></p>}
-                {ap.impacto && (
-                  <p className="mb-2 text-[11px] text-slate-500">Impacto: <Texto>{ap.impacto}</Texto></p>
-                )}
-
-                {ap.contenido && Object.keys(ap.contenido).length > 0 && (
-                  <BorradorPromocion contenido={ap.contenido} aprobacionId={ap.id}
-                    onGuardado={() => cargar(true)} />
-                )}
-
-                {cambios.id === ap.id ? (
                   <div className="space-y-2">
-                    <Textarea
-                      value={cambios.texto}
-                      onChange={(e) => setCambios({ id: ap.id, texto: e.target.value })}
-                      placeholder="Qué hay que cambiar"
-                      rows={2}
-                      className="text-xs"
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm" className="flex-1"
-                        onClick={() => decidir(ap.id, 'changes_requested', cambios.texto)}>
-                        Enviar cambios
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setCambios({ id: null, texto: '' })}>
-                        Cancelar
-                      </Button>
-                    </div>
+                    {activos.map((t) => {
+                      const atasco = atascos.find((a) => a.id === t.id);
+                      return (
+                      <div key={t.id} className={`rounded-lg border p-3 hover:border-blue-200 ${
+                        atasco ? 'border-amber-300 bg-amber-50/40' : ''}`}>
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <Etiqueta mapa={ESTADO_TRABAJO} valor={t.estado} />
+                          <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
+                            <Texto>{t.titulo}</Texto>
+                          </p>
+                          <span className="text-[10px] text-slate-400"><Clock className="mr-1 inline h-3 w-3" />{hace(t.creado_en)}</span>
+                        </div>
+
+                        {/* ── EL RELOJ ────────────────────────────────────────
+                            Sin esto, un trabajo parado 25 horas se veía igual
+                            que uno parado 25 segundos: los dos ponían "en
+                            curso". Pasó el 14/08 y se descubrió al día
+                            siguiente mirando una captura de pantalla. */}
+                        {atasco && (
+                          <p className="mb-2 flex items-start gap-1 rounded bg-amber-100/70 p-2 text-[10px] font-semibold text-amber-900">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            Atascado: {tiempoParado(atasco.minutos)} sin moverse
+                            {atasco.lo_tiene ? <> · lo tiene <b>{NOMBRE_CORTO[atasco.lo_tiene] || atasco.lo_tiene}</b></> : null}
+                          </p>
+                        )}
+
+                        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                          {t.esperando_a && <span>Esperando a <b>{NOMBRE_CORTO[t.esperando_a] || t.esperando_a}</b></span>}
+                          <span>{t.mensajes} mensajes internos</span>
+                          {Number(t.intentos) > 1 && <span className="text-amber-600">{t.intentos} intentos</span>}
+                          {Number(atasco?.rondas) > 0 && (
+                            <span className="text-violet-700">
+                              correcciones: {atasco.rondas} de {atasco.max_rondas}
+                            </span>
+                          )}
+                        </div>
+
+                        {t.error && (
+                          <p className="mb-2 flex items-start gap-1 rounded bg-red-50 p-2 text-[10px] text-red-700">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span title={t.error}><Texto>{traducirErrorIA(t.error)}</Texto></span>
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => abrirDetalle(t.id)}>
+                            Ver historial <ChevronRight className="ml-1 h-3 w-3" />
+                          </Button>
+                          {t.estado === 'failed' && (
+                            <Button size="sm" variant="outline" className="h-7 text-[11px]"
+                              onClick={() => accionTrabajo(t.id, 'reintentar')}>
+                              <RotateCcw className="mr-1 h-3 w-3" /> Reintentar
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-7 text-[11px] text-slate-500"
+                            onClick={() => accionTrabajo(t.id, 'cancelar')}>
+                            <Ban className="mr-1 h-3 w-3" /> Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                      );
+                    })}
                   </div>
+                </div>
+              )}
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <h2 className="mb-3 text-sm font-bold text-slate-800">Historial</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-left text-[11px]">
+                    <thead className="text-slate-400">
+                      <tr>
+                        <th className="pb-2 font-medium">Trabajo</th>
+                        <th className="pb-2 font-medium">Estado</th>
+                        <th className="pb-2 font-medium">Pedido</th>
+                        <th className="pb-2 font-medium">Terminado</th>
+                        <th className="pb-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trabajos.length === 0 && (
+                        <tr><td colSpan={5} className="py-4 text-center text-slate-400">Sin historial todavía.</td></tr>
+                      )}
+                      {trabajos.map((t) => (
+                        <tr key={t.id} className="border-t">
+                          <td className="max-w-[220px] truncate py-2 text-slate-700"><Texto>{t.titulo}</Texto></td>
+                          <td className="py-2"><Etiqueta mapa={ESTADO_TRABAJO} valor={t.estado} /></td>
+                          <td className="py-2 text-slate-500">{hace(t.creado_en)}</td>
+                          <td className="py-2 text-slate-500">{t.terminado_en ? hace(t.terminado_en) : '—'}</td>
+                          <td className="py-2 text-right">
+                            <button type="button" onClick={() => abrirDetalle(t.id)}
+                              className="text-blue-600 hover:underline">ver</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4 lg:col-span-2">
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <MessageSquarePlus className="h-4 w-4 text-slate-500" />
+                  <h2 className="text-sm font-bold text-slate-800">Pedirle algo al equipo</h2>
+                </div>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Le hablas a Hermes. Él decide si necesita a Jarvis, al Comercial-Creativo, o a ninguno.
+                </p>
+                <Textarea
+                  value={peticion}
+                  onChange={(e) => setPeticion(e.target.value)}
+                  placeholder="Ej.: prepara la promoción de hoy con dos productos"
+                  rows={3}
+                  className="mb-2 text-sm"
+                  aria-label="Petición para Hermes"
+                />
+                <Button onClick={pedir} disabled={enviando || !peticion.trim()} className="w-full">
+                  {enviando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Enviar a Hermes
+                </Button>
+                <p className="mt-2 text-[10px] text-slate-400">
+                  Se abre el chat flotante con Hermes y te contesta ahí mismo.
+                </p>
+              </div>
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <h3 className="mb-1 text-xs font-bold text-slate-700">Órdenes de Equipo IA</h3>
+                <p className="mb-2 text-xs text-slate-500">Se muestran las {PUBLICACIONES_RECIENTES} órdenes más recientes con todos sus destinos.</p>
+                {errorDestinos ? (
+                  <p className="text-xs text-amber-700">No se pudo consultar el estado de las publicaciones. Actualiza la página o revisa el acceso.</p>
+                ) : destinos.length === 0 ? (
+                  <p className="text-xs text-slate-500">Todavía no hay destinos registrados en este módulo.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => decidir(ap.id, 'approved')}>
-                      <Check className="mr-1 h-3 w-3" /> Aprobar
-                    </Button>
-                    {/* El orden importa: "pedir cambios" es lo que se
-                        quiere nueve de cada diez veces, y descartar cierra
-                        el trabajo entero. Poner el rojo en medio invitaba a
-                        usarlo para decir "esto no me gusta". */}
-                    <Button size="sm" variant="outline" className="flex-1"
-                      onClick={() => setCambios({ id: ap.id, texto: '' })}>
-                      Pedir cambios
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1 border-red-200 text-red-700"
-                      title="Cierra el trabajo entero. Si solo quieres otra versión, usa Pedir cambios."
-                      onClick={() => decidir(ap.id, 'rejected')}>
-                      <X className="mr-1 h-3 w-3" /> Descartar todo
-                    </Button>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {destinosVisibles.map((d) => (
+                      <div key={d.id} className="rounded-lg border border-slate-200 p-2 text-xs">
+                        <p className="truncate font-semibold text-slate-700"><Texto>{d.hermes_publication_jobs?.title || 'Publicación'}</Texto></p>
+                        <p className="text-slate-500 capitalize"><Texto>{d.platform}</Texto> · <Texto>{d.placement}</Texto></p>
+                        <p className="text-slate-400">Actualizado {hace(d.updated_at)}</p>
+                        <p className={`font-semibold ${d.status === 'published' ? 'text-emerald-700' : d.status === 'failed' ? 'text-red-700' : 'text-amber-700'}`}>
+                          {ESTADO_PUBLICACION[d.status] || d.status}
+                        </p>
+                        {d.status === 'published' && d.external_url && (
+                          <a className="text-blue-700 underline" href={d.external_url} target="_blank" rel="noreferrer">Ver publicación</a>
+                        )}
+                        {d.status === 'failed' && d.error_message && <p className="mt-1 text-red-700" title={d.error_message}><Texto>{traducirErrorIA(d.error_message)}</Texto></p>}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
-            )))}
-          </div>
-        </div>
-      )}
-
-      {/* ── C/E · BITÁCORA DEL EQUIPO ─────────────────────────────────
-          (01/10) Trabajos activos, Historial, "Pedirle algo" y las órdenes
-          de publicación repetían lo de arriba: los 9 trabajos de 30 días
-          fueron promociones del panel, que ya se siguen en la tarjeta del
-          encargo y en el Paso 4. Aquí quedan para lo único que solo se hace
-          aquí: ver por qué falló, reintentar o cancelar. Se abre sola si
-          algo está atascado o falló. */}
-      <details className="mb-4 rounded-xl border bg-white shadow-sm" open={bitacoraAbierta}
-        onToggle={(e) => setBitacoraAbierta(e.currentTarget.open)}>
-        <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-4 py-3 text-sm font-bold text-slate-800">
-          <ClipboardList className="h-4 w-4 text-slate-500" />
-          Bitácora del equipo
-          <span className="text-[11px] font-normal text-slate-400">
-            {activos.length} en curso · {trabajos.length} en el historial
-          </span>
-          {problemas > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-              {problemas} con problema
-            </span>
-          )}
-        </summary>
-        <div className="grid gap-4 border-t p-4 lg:grid-cols-5">
-          <div className="space-y-4 lg:col-span-3">
-            {activos.length > 0 && (
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-slate-800">Trabajos activos</h2>
-                  <span className="text-[11px] text-slate-400">{activos.length} en curso</span>
-                </div>
-
-                <div className="space-y-2">
-                  {activos.map((t) => {
-                    const atasco = atascos.find((a) => a.id === t.id);
-                    return (
-                    <div key={t.id} className={`rounded-lg border p-3 hover:border-blue-200 ${
-                      atasco ? 'border-amber-300 bg-amber-50/40' : ''}`}>
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <Etiqueta mapa={ESTADO_TRABAJO} valor={t.estado} />
-                        <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
-                          <Texto>{t.titulo}</Texto>
-                        </p>
-                        <span className="text-[10px] text-slate-400"><Clock className="mr-1 inline h-3 w-3" />{hace(t.creado_en)}</span>
-                      </div>
-
-                      {/* ── EL RELOJ ────────────────────────────────────────
-                          Sin esto, un trabajo parado 25 horas se veía igual
-                          que uno parado 25 segundos: los dos ponían "en
-                          curso". Pasó el 14/08 y se descubrió al día
-                          siguiente mirando una captura de pantalla. */}
-                      {atasco && (
-                        <p className="mb-2 flex items-start gap-1 rounded bg-amber-100/70 p-2 text-[10px] font-semibold text-amber-900">
-                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                          Atascado: {tiempoParado(atasco.minutos)} sin moverse
-                          {atasco.lo_tiene ? <> · lo tiene <b>{NOMBRE_CORTO[atasco.lo_tiene] || atasco.lo_tiene}</b></> : null}
-                        </p>
-                      )}
-
-                      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
-                        {t.esperando_a && <span>Esperando a <b>{NOMBRE_CORTO[t.esperando_a] || t.esperando_a}</b></span>}
-                        <span>{t.mensajes} mensajes internos</span>
-                        {Number(t.intentos) > 1 && <span className="text-amber-600">{t.intentos} intentos</span>}
-                        {Number(atasco?.rondas) > 0 && (
-                          <span className="text-violet-700">
-                            correcciones: {atasco.rondas} de {atasco.max_rondas}
-                          </span>
-                        )}
-                      </div>
-
-                      {t.error && (
-                        <p className="mb-2 flex items-start gap-1 rounded bg-red-50 p-2 text-[10px] text-red-700">
-                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span title={t.error}><Texto>{traducirErrorIA(t.error)}</Texto></span>
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => abrirDetalle(t.id)}>
-                          Ver historial <ChevronRight className="ml-1 h-3 w-3" />
-                        </Button>
-                        {t.estado === 'failed' && (
-                          <Button size="sm" variant="outline" className="h-7 text-[11px]"
-                            onClick={() => accionTrabajo(t.id, 'reintentar')}>
-                            <RotateCcw className="mr-1 h-3 w-3" /> Reintentar
-                          </Button>
-                        )}
-                        <Button size="sm" variant="outline" className="h-7 text-[11px] text-slate-500"
-                          onClick={() => accionTrabajo(t.id, 'cancelar')}>
-                          <Ban className="mr-1 h-3 w-3" /> Cancelar
-                        </Button>
-                      </div>
-                    </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <h2 className="mb-3 text-sm font-bold text-slate-800">Historial</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-left text-[11px]">
-                  <thead className="text-slate-400">
-                    <tr>
-                      <th className="pb-2 font-medium">Trabajo</th>
-                      <th className="pb-2 font-medium">Estado</th>
-                      <th className="pb-2 font-medium">Pedido</th>
-                      <th className="pb-2 font-medium">Terminado</th>
-                      <th className="pb-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trabajos.length === 0 && (
-                      <tr><td colSpan={5} className="py-4 text-center text-slate-400">Sin historial todavía.</td></tr>
-                    )}
-                    {trabajos.map((t) => (
-                      <tr key={t.id} className="border-t">
-                        <td className="max-w-[220px] truncate py-2 text-slate-700"><Texto>{t.titulo}</Texto></td>
-                        <td className="py-2"><Etiqueta mapa={ESTADO_TRABAJO} valor={t.estado} /></td>
-                        <td className="py-2 text-slate-500">{hace(t.creado_en)}</td>
-                        <td className="py-2 text-slate-500">{t.terminado_en ? hace(t.terminado_en) : '—'}</td>
-                        <td className="py-2 text-right">
-                          <button type="button" onClick={() => abrirDetalle(t.id)}
-                            className="text-blue-600 hover:underline">ver</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {!errorDestinos && destinosVisibles.length < destinos.length && (
+                  <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+                    onClick={() => setVerOrdenesAnteriores(true)}>
+                    Ver órdenes anteriores
+                  </button>
+                )}
+                {!errorDestinos && verOrdenesAnteriores && destinos.length > 0 && (
+                  <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
+                    onClick={() => setVerOrdenesAnteriores(false)}>
+                    Ocultar órdenes anteriores
+                  </button>
+                )}
               </div>
             </div>
           </div>
-          <div className="space-y-4 lg:col-span-2">
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-center gap-2">
-                <MessageSquarePlus className="h-4 w-4 text-slate-500" />
-                <h2 className="text-sm font-bold text-slate-800">Pedirle algo al equipo</h2>
-              </div>
-              <p className="mb-2 text-[11px] text-slate-500">
-                Le hablas a Hermes. Él decide si necesita a Jarvis, al Comercial-Creativo, o a ninguno.
-              </p>
-              <Textarea
-                value={peticion}
-                onChange={(e) => setPeticion(e.target.value)}
-                placeholder="Ej.: prepara la promoción de hoy con dos productos"
-                rows={3}
-                className="mb-2 text-sm"
-                aria-label="Petición para Hermes"
-              />
-              <Button onClick={pedir} disabled={enviando || !peticion.trim()} className="w-full">
-                {enviando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Enviar a Hermes
-              </Button>
-              <p className="mt-2 text-[10px] text-slate-400">
-                Se abre el chat flotante con Hermes y te contesta ahí mismo.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <h3 className="mb-1 text-xs font-bold text-slate-700">Órdenes de Equipo IA</h3>
-              <p className="mb-2 text-xs text-slate-500">Se muestran las {PUBLICACIONES_RECIENTES} órdenes más recientes con todos sus destinos.</p>
-              {errorDestinos ? (
-                <p className="text-xs text-amber-700">No se pudo consultar el estado de las publicaciones. Actualiza la página o revisa el acceso.</p>
-              ) : destinos.length === 0 ? (
-                <p className="text-xs text-slate-500">Todavía no hay destinos registrados en este módulo.</p>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {destinosVisibles.map((d) => (
-                    <div key={d.id} className="rounded-lg border border-slate-200 p-2 text-xs">
-                      <p className="truncate font-semibold text-slate-700"><Texto>{d.hermes_publication_jobs?.title || 'Publicación'}</Texto></p>
-                      <p className="text-slate-500 capitalize"><Texto>{d.platform}</Texto> · <Texto>{d.placement}</Texto></p>
-                      <p className="text-slate-400">Actualizado {hace(d.updated_at)}</p>
-                      <p className={`font-semibold ${d.status === 'published' ? 'text-emerald-700' : d.status === 'failed' ? 'text-red-700' : 'text-amber-700'}`}>
-                        {ESTADO_PUBLICACION[d.status] || d.status}
-                      </p>
-                      {d.status === 'published' && d.external_url && (
-                        <a className="text-blue-700 underline" href={d.external_url} target="_blank" rel="noreferrer">Ver publicación</a>
-                      )}
-                      {d.status === 'failed' && d.error_message && <p className="mt-1 text-red-700" title={d.error_message}><Texto>{traducirErrorIA(d.error_message)}</Texto></p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!errorDestinos && destinosVisibles.length < destinos.length && (
-                <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
-                  onClick={() => setVerOrdenesAnteriores(true)}>
-                  Ver órdenes anteriores
-                </button>
-              )}
-              {!errorDestinos && verOrdenesAnteriores && destinos.length > 0 && (
-                <button type="button" className="mt-3 text-xs font-semibold text-blue-700 underline"
-                  onClick={() => setVerOrdenesAnteriores(false)}>
-                  Ocultar órdenes anteriores
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </details>
+        </details>
+
+      </div>
 
       {/* ── CAMBIARLE EL MOTOR A UN AGENTE ────────────────────────── */}
       <Dialog open={!!motor} onOpenChange={(v) => !v && setMotor(null)}>

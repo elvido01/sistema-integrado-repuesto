@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
-import { Bot, CalendarClock, Loader2, Sparkles } from 'lucide-react';
+import { Bot, CalendarClock, Loader2, Recycle, Sparkles } from 'lucide-react';
+import { mediaDeBundle, precioDelArte, textosReuso } from '@/lib/textoReuso';
 
 // PUBLICACIÓN DIARIA CON HERMES
 //
@@ -14,6 +15,20 @@ import { Bot, CalendarClock, Loader2, Sparkles } from 'lucide-react';
 // puesta aquí.
 
 const DIAS_APRENDIZAJE = 30;
+
+// Un archivo público que ya no está (404) no se manda a publicar.
+async function existe(url) {
+  try {
+    const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    return r.ok;
+  } catch {
+    return true; // sin red no se puede saber: que lo diga la vista previa del formulario
+  }
+}
+async function soloLosQueExisten(media) {
+  const pares = await Promise.all(Object.entries(media).map(async ([k, url]) => [k, url, await existe(url)]));
+  return Object.fromEntries(pares.filter(([, , ok]) => ok).map(([k, url]) => [k, url]));
+}
 const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 const dinero = (n) => `RD$${Math.round(Number(n) || 0).toLocaleString('es-DO')}`;
 
@@ -30,11 +45,16 @@ const OBJETIVOS = {
   interaccion: { txt: '💬 Conversación', cls: 'bg-amber-100 text-amber-800', ayuda: 'Una pregunta sobre su moto para que comenten. Reel ¿Le sirve a tu moto?.' },
 };
 
-export function PublicacionDiaria({ trabajos, onRevisar }) {
+// (21/11/2026) Sin pieza nueva, Hermes llena la franja con una publicación
+// anterior (reuso_bundle_id): mismo arte, texto nuevo. "Revisar y publicar"
+// llena el formulario con el arte viejo y un texto nuevo con el precio de hoy.
+export function PublicacionDiaria({ trabajos, onRevisar, onReusar }) {
   const { toast } = useToast();
   const [cfg, setCfg] = useState(null);
   const [hoy, setHoy] = useState([]);
   const [prods, setProds] = useState({});
+  const [reusos, setReusos] = useState({});
+  const [abriendo, setAbriendo] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [eligiendo, setEligiendo] = useState(false);
 
@@ -49,6 +69,17 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
     if (ids.length) {
       const { data: ps } = await supabase.from('productos').select('id, codigo, descripcion, precio').in('id', ids);
       setProds(Object.fromEntries((ps || []).map((p) => [p.id, p])));
+    }
+    const bundles = (e || []).map((x) => x.reuso_bundle_id).filter(Boolean);
+    if (bundles.length) {
+      const { data: js } = await supabase.from('hermes_publication_jobs')
+        .select('publication_bundle_id, placement, media_type, image_url, media_url, precio_mostrado, textos, completed_at, created_at')
+        .in('publication_bundle_id', bundles);
+      const porBundle = {};
+      (js || []).forEach((j) => { (porBundle[j.publication_bundle_id] ||= []).push(j); });
+      setReusos(porBundle);
+    } else {
+      setReusos({});
     }
   }, []);
 
@@ -86,9 +117,38 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
   const dias = desde ? Math.floor((Date.now() - desde.getTime()) / 86400000) : 0;
   const faltan = Math.max(0, DIAS_APRENDIZAJE - dias);
   const trabajoDe = (id) => (trabajos || []).find((w) => w.id === id);
+  // La reutilizada va directo al formulario de publicar: arte viejo, texto nuevo.
+  const reusar = async (e, p) => {
+    const jobs = reusos[e.reuso_bundle_id] || [];
+    setAbriendo(e.id);
+    // Lo que se borró del almacenamiento no se reusa (había reels viejos con
+    // 404). Sin video, el formulario arma uno con la imagen de la historia.
+    const media = await soloLosQueExisten(mediaDeBundle(jobs));
+    const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
+    setAbriendo(null);
+    if (!media.imagen_feed) {
+      toast({ variant: 'destructive', title: 'El arte anterior ya no está', description: 'Elige otra pieza en el Paso 1.' });
+      return;
+    }
+    const viejo = jobs.find((j) => j.textos && Object.keys(j.textos).length)?.textos || {};
+    onReusar({
+      programarPara: e.hora_publicar ? `${e.fecha}T${String(e.hora_publicar).slice(0, 5)}` : null,
+      producto: { ...p, existencia: Number(stock || 0) },
+      sinDescuento: true,
+      titulo: p.descripcion,
+      media,
+      textos: textosReuso({ descripcion: p.descripcion, precio: p.precio, textosViejos: viejo, semilla: e.fecha }),
+    });
+  };
   // (06/10/2026) En qué va: elegida → (30 min antes) arte → reel → aviso.
   const etapa = (e, w) => {
     if (e.avisado_at) return /ya publicada/.test(e.nota || '') ? 'ya publicada' : '✅ lista: te avisé para publicarla';
+    if (e.reuso_bundle_id) {
+      if (!e.hora_publicar) return 'arte listo';
+      const [H, M] = String(e.hora_publicar).split(':').map(Number);
+      const t = H * 60 + M - 30;
+      return `arte listo · te aviso a las ${hora12(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`)}`;
+    }
     if (!e.trabajo_id) {
       if (!e.hora_publicar) return 'elegida';
       const [H, M] = String(e.hora_publicar).split(':').map(Number);
@@ -173,6 +233,9 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
           {hoy.map((e) => {
             const p = prods[e.producto_id];
             const w = e.trabajo_id ? trabajoDe(e.trabajo_id) : null;
+            const jobsReuso = e.reuso_bundle_id ? reusos[e.reuso_bundle_id] || [] : [];
+            const miniatura = e.reuso_bundle_id ? mediaDeBundle(jobsReuso).imagen_feed : null;
+            const precioArte = e.reuso_bundle_id ? precioDelArte(jobsReuso) : null;
             return (
               <div key={e.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-[11px]">
                 <p className="flex items-center justify-between text-[10px] font-bold uppercase text-violet-700">
@@ -189,11 +252,35 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
                 </p>
                 {p ? (
                   <>
-                    <p className="truncate font-bold text-slate-800" title={p.descripcion}>{p.descripcion}</p>
-                    <p className="text-slate-500">{dinero(p.precio)} · {p.codigo}</p>
-                    {e.nota && <p className="mt-0.5 line-clamp-2 text-[10px] text-violet-700">{e.nota}</p>}
+                    <div className="flex gap-2">
+                      {miniatura && (
+                        <img src={miniatura} alt="" className="h-12 w-12 shrink-0 rounded border object-cover" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-slate-800" title={p.descripcion}>{p.descripcion}</p>
+                        <p className="text-slate-500">{dinero(p.precio)} · {p.codigo}</p>
+                        {e.reuso_bundle_id && (
+                          <span className="inline-flex items-center gap-1 rounded bg-teal-50 px-1 py-px text-[9px] font-bold text-teal-700">
+                            <Recycle className="h-2.5 w-2.5" /> Reutilizada · mismo arte, texto nuevo
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {e.nota && <p className="mt-0.5 line-clamp-2 text-[10px] text-violet-700">{e.nota.replace(/^♻ Reutilizada: /, '').replace(/ Ojo: el arte dice .*$/, '')}</p>}
+                    {precioArte != null && Math.round(precioArte) !== Math.round(Number(p.precio)) && (
+                      <p className="mt-0.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-800">
+                        El arte dice {dinero(precioArte)} y hoy cuesta {dinero(p.precio)}.
+                      </p>
+                    )}
                     <div className="mt-1 flex items-center gap-2">
                       <span className="text-[10px] text-slate-500">{etapa(e, w)}</span>
+                      {e.reuso_bundle_id && onReusar && !/ya publicada/.test(e.nota || '') && (
+                        <button type="button" onClick={() => reusar(e, p)} disabled={abriendo === e.id}
+                          className="ml-auto flex items-center gap-1 rounded bg-teal-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-teal-700 disabled:opacity-50">
+                          {abriendo === e.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                          Revisar y publicar
+                        </button>
+                      )}
                       {e.trabajo_id && onRevisar && (
                         <button type="button" onClick={() => onRevisar(e.trabajo_id)}
                           className="ml-auto rounded bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-violet-700">
@@ -203,7 +290,7 @@ export function PublicacionDiaria({ trabajos, onRevisar }) {
                     </div>
                   </>
                 ) : (
-                  <p className="text-amber-700">{e.nota || 'Sin candidata hoy.'} Sube fotos de piezas de este rango en "Fotos del día".</p>
+                  <p className="text-amber-700">{e.nota || 'Sin candidata hoy.'} Sube fotos de piezas de este rango en la pestaña Inventario → "Fotos del día".</p>
                 )}
               </div>
             );

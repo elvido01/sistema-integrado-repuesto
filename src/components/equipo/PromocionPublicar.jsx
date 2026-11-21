@@ -311,6 +311,11 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
     }
     setExistenciaOk(false);
     setConDescuento(!prefill.sinDescuento);
+    // Es una promoción nueva: la anterior, si había, no se toca. (21/11/2026)
+    // Antes esto iba al final y borraba la hora de la publicación diaria
+    // recién puesta: "la hora ya viene puesta" no se cumplía.
+    setBundle(null);
+    setCuando('');
     // La hora de la publicación diaria de Hermes, si todavía no ha pasado.
     if (prefill.programarPara && new Date(`${prefill.programarPara}:00-04:00`) > new Date()) {
       setCuando(prefill.programarPara);
@@ -329,9 +334,6 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
         return nuevos;
       });
     }
-    // Es una promoción nueva: la anterior, si había, no se toca.
-    setBundle(null);
-    setCuando('');
     // Con la historia en la mano, el video vertical sale solo.
     if (prefill.media?.imagen_historia && !prefill.media?.video && formatoDeVideo()) {
       setMedia((m) => ({ ...m, video: '' }));
