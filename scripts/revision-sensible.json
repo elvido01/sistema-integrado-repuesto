@@ -295,7 +295,7 @@
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
     "src/components/compras/CompraDetalles.jsx": "8fd91020eb3f079f",
     "src/components/compras/CompraFooter.jsx": "2fd05326e54dc046",
-    "src/components/compras/CompraHeader.jsx": "ced7745fece99219",
+    "src/components/compras/CompraHeader.jsx": "6827a1ea4d8f5e23",
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
     "src/components/compras/InvoiceUploadModal.jsx": "a209c4511074cee9",
     "src/components/compras/PrecisionOcrModal.jsx": "900ae224342d8381",
@@ -468,13 +468,6 @@
     "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high ojito recibos de hoy: 8 hallazgos; arreglados perder lo marcado sin aviso (confirm), aperturas que se pisan (token en abrirFamilia), doble clic mientras carga, scroll aunque no abrio, scroll de toda la pagina (nearest), aria-label, helper verFamilia",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-09",
       "nota": "code-review high: 8 hallazgos (activo/reemplazado_por, nulls, carrera de busqueda, mayusculas, re-anular, tipado, codigo muerto) arreglados; 2 query extra aceptadas",
@@ -1024,6 +1017,13 @@
       "archivos": [
         "sql/aviso_vencimiento_ecf.sql",
         "src/components/configuracion/DgiiCertificadoUploader.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-21",
+      "nota": "code-review high (encabezado de Compras en dos cajas): corregidos — Detalles más ancho entre 1024-1535 px, Suplidor primero en el Tab (a la derecha en pantalla), F3 del suplidor ya no abre también la búsqueda de productos, sin id interno como nombre, puntos suspensivos en dirección y listas, selector de retención único. Medido: 130 px de alto a 1024 y 1600.",
+      "archivos": [
+        "src/components/compras/CompraHeader.jsx"
       ]
     }
   ]
