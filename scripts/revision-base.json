@@ -29,14 +29,13 @@
       "src/pages/CotizacionPage.jsx": 2,
       "src/pages/CuentasBancariasPage.jsx": 4,
       "src/pages/DevolucionesPage.jsx": 2,
-      "src/pages/DocumentacionClientePage.jsx": 1,
       "src/pages/EtiquetasMasivasPage.jsx": 3,
       "src/pages/GestionCobroPage.jsx": 1,
       "src/pages/GruposEquivalentesPage.jsx": 1,
       "src/pages/HomePage.jsx": 1,
       "src/pages/InventarioFisicoPage.jsx": 1,
       "src/pages/NominaPage.jsx": 1,
-      "src/pages/NotasComentariosPage.jsx": 2,
+      "src/pages/NotasComentariosPage.jsx": 1,
       "src/pages/OrdenCompraPage.jsx": 4,
       "src/pages/PedidosPage.jsx": 2,
       "src/pages/ProductsPage.jsx": 3,
@@ -121,5 +120,5 @@
       "registrar_pago_prestamo"
     ]
   },
-  "actualizado": "2026-11-14"
+  "actualizado": "2026-11-21"
 }
