@@ -166,6 +166,24 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
     ? trabajo.resultado : null;
   const pieza = enMesa?.contenido || yaAceptada;
 
+  // (21/11/2026) ¿Ya salió? Lo mandado a publicar después de aceptarla.
+  const [publicadaEn, setPublicadaEn] = useState(null);
+  const piezaId = piezas?.[0]?.id || null;
+  useEffect(() => {
+    if (!yaAceptada || !piezaId) { setPublicadaEn(null); return undefined; }
+    let vivo = true;
+    const desde = trabajo?.terminado_en || trabajo?.creado_en;
+    supabase.from('hermes_publication_jobs')
+      .select('created_at')
+      .eq('producto_id', piezaId)
+      .gte('created_at', desde)
+      .not('status', 'in', '(draft,failed,cancelled,rejected)')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => { if (vivo) setPublicadaEn(data?.[0]?.created_at || null); });
+    return () => { vivo = false; };
+  }, [!!yaAceptada, piezaId, trabajo?.terminado_en]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Se mira cada tres segundos mientras el creativo trabaja. En cuanto la
   // pieza está en la mesa, o el trabajo terminó, se deja de preguntar.
   // Con un texto sin imagen se SIGUE mirando: si luego llega una pieza, la
@@ -411,11 +429,15 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
       {/* ── La pieza: en la mesa, o ya aceptada antes ── */}
       {pieza && (
         <>
-          {yaAceptada && (
+          {yaAceptada && (publicadaEn ? (
             <p className="mb-2 text-[11px] font-semibold text-emerald-700">
-              Esta pieza ya la aceptaste hoy. Puedes volver a usarla en el formulario.
+              ✅ Ya la mandaste a publicar ({new Date(publicadaEn).toLocaleString('es-DO', { timeZone: 'America/Santo_Domingo', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}). Mírala en el Paso 4 o en el Calendario.
             </p>
-          )}
+          ) : (
+            <p className="mb-2 text-[11px] font-semibold text-emerald-700">
+              Esta pieza ya la aceptaste. Puedes volver a usarla en el formulario.
+            </p>
+          ))}
           <div className={`grid gap-3 ${pieza.reel?.video_url ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             <Pieza imagenId={pieza.arte_imagen_id} etiqueta="Feed cuadrado" onCargada={guardarPieza} />
             {pieza.arte_historia_id && (
@@ -442,7 +464,11 @@ export function EncargoArte({ trabajoId, productos, onUsar, onCerrar, onReencarg
             </ul>
           )}
 
-          {yaAceptada ? (
+          {yaAceptada && publicadaEn ? (
+            <div className="mt-3">
+              <Button size="sm" variant="outline" onClick={onCerrar}>Cerrar</Button>
+            </div>
+          ) : yaAceptada ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button size="sm" disabled={trabajando} onClick={usar}
                 className="bg-emerald-600 text-white hover:bg-emerald-700">

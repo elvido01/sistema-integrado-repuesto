@@ -565,6 +565,10 @@ export default function PromocionPublicar({ prefill = null, onLibre = null }) {
       });
       // Lo mandado a publicar sale de "Qué promocionar hoy" por 30 días.
       window.dispatchEvent(new CustomEvent('equipo-ia:candidatas-cambian'));
+      // (21/11/2026) Y el resto de la pantalla se entera YA: el Paso 2 cierra
+      // la pieza, "Esperando tu aprobación", el calendario y la publicación
+      // diaria se releen. Antes seguían como antes de publicar.
+      window.dispatchEvent(new CustomEvent('equipo-ia:publicada', { detail: { productoId: producto?.id || null } }));
       limpiar();
     } catch (e) {
       toast({ variant: 'destructive', title: 'No se pudo', description: e.message, duration: 10000 });

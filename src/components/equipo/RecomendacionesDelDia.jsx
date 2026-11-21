@@ -109,6 +109,19 @@ export function RecomendacionesDelDia({ onEncargado, onUsar, trabajos, enfocar, 
     if (retomar) setEncargo({ trabajoId: retomar.id, productos: [] });
   }, [trabajos, encargo, ignorados, pausarRetomar]);
 
+  // (21/11/2026) Publicada en el Paso 3: la tarjeta de esa pieza se cierra y
+  // no se retoma (antes seguía ofreciendo "Volver a usarla").
+  useEffect(() => {
+    const f = () => {
+      setEncargo((e) => {
+        if (e?.trabajoId) ignorar(e.trabajoId);
+        return null;
+      });
+    };
+    window.addEventListener('equipo-ia:publicada', f);
+    return () => window.removeEventListener('equipo-ia:publicada', f);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // >>> CUANDO LA LISTA GENERAL MANDA AQUÍ <<<
   // Las promociones del panel ya no se aprueban en "Esperando tu
   // aprobación": se aprueban aquí, en el paso 2. Aquella lista solo avisa y

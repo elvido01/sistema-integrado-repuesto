@@ -337,6 +337,12 @@ const EquipoIAPage = () => {
   }, [toast]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  // (21/11/2026) Lo que se publica desde el Paso 3 se refleja sin recargar.
+  useEffect(() => {
+    const f = () => cargar(true);
+    window.addEventListener('equipo-ia:publicada', f);
+    return () => window.removeEventListener('equipo-ia:publicada', f);
+  }, [cargar]);
 
   // Tiempo real sobre las tres tablas. Es la misma infraestructura que ya
   // usa el widget de Hermes: no hace falta una cola aparte.
@@ -346,6 +352,7 @@ const EquipoIAPage = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'equipo_trabajos' }, () => cargar(true))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'equipo_mensajes' }, () => cargar(true))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'equipo_aprobaciones' }, () => cargar(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipo_auto_elegidas' }, () => cargar(true))
       .subscribe();
     return () => { supabase.removeChannel(canal); };
   }, [cargar]);
@@ -366,6 +373,15 @@ const EquipoIAPage = () => {
   const trabajos = data?.trabajos || [];
   const aprobaciones = data?.aprobaciones || [];
   const pendientes = useMemo(() => aprobaciones.filter((a) => a.estado === 'pending'), [aprobaciones]);
+  // (21/11/2026) Las de más de 3 días sin aprobar no estorban en Hoy: van
+  // plegadas debajo. Había 7 del 8 al 12 de noviembre tapando lo de hoy.
+  const [verViejas, setVerViejas] = useState(false);
+  const [pendRecientes, pendViejas] = useMemo(() => {
+    const limite = Date.now() - 3 * 24 * 3600 * 1000;
+    const r = []; const v = [];
+    pendientes.forEach((a) => ((a.creado_en && new Date(a.creado_en).getTime() < limite) ? v : r).push(a));
+    return [r, v];
+  }, [pendientes]);
   // >>> UNA PROMOCIÓN SE APRUEBA EN UN SOLO SITIO (28/09/2026) <<<
   // Las del panel ("Qué promocionar hoy") salían dos veces: aquí, con Aprobar
   // / Pedir cambios / Descartar todo, y arriba en el paso 2 con la imagen
@@ -567,7 +583,7 @@ const EquipoIAPage = () => {
       <div className="sticky top-0 z-10 -mx-3 mb-4 border-b bg-slate-100/95 px-3 pt-1 backdrop-blur md:-mx-4 md:px-4" role="tablist" aria-label="Secciones de Equipo IA">
         <div className="flex gap-1 overflow-x-auto">
           {PESTANAS.map((t) => {
-            const n = t.id === 'hoy' ? pendientes.length : t.id === 'equipo' ? atascos.length : 0;
+            const n = t.id === 'hoy' ? pendRecientes.length : t.id === 'equipo' ? atascos.length : 0;
             const activa = pestana === t.id;
             return (
               <button key={t.id} type="button" role="tab" aria-selected={activa}
@@ -600,15 +616,24 @@ const EquipoIAPage = () => {
           <div className="mb-4 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-800">Esperando tu aprobación</h2>
-              {pendientes.length > 0 && (
+              {pendRecientes.length > 0 && (
                 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
-                  {pendientes.length}
+                  {pendRecientes.length}
                 </span>
               )}
             </div>
+            {pendRecientes.length === 0 && (
+              <p className="mb-2 text-[11px] text-slate-500">Nada nuevo de los últimos 3 días.</p>
+            )}
+            {pendViejas.length > 0 && (
+              <button type="button" onClick={() => setVerViejas((v) => !v)}
+                className="mb-2 text-[11px] font-semibold text-violet-700 hover:underline">
+                {verViejas ? 'Ocultar' : 'Ver'} {pendViejas.length} más vieja{pendViejas.length === 1 ? '' : 's'} (más de 3 días sin aprobar)
+              </button>
+            )}
 
             <div className="space-y-3">
-              {pendientes.map((ap) => (promoDelPanel(ap) ? (
+              {(verViejas ? pendientes : pendRecientes).map((ap) => (promoDelPanel(ap) ? (
                 <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
                   <p className="text-xs font-bold text-slate-800"><Texto>{ap.trabajo_titulo || ap.accion}</Texto></p>
                   <p className="mt-1 text-[11px] text-slate-600">

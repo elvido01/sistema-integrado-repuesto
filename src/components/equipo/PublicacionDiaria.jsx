@@ -73,6 +73,12 @@ export function PublicacionDiaria({ trabajos, onRevisar, onReusar }) {
   useEffect(() => { cargar(); }, [cargar]);
   // Cuando el worker las encarga, la lista de trabajos de la página cambia.
   useEffect(() => { cargar(); }, [trabajos?.length, cargar]);
+  // Publicada desde el Paso 3, o una franja que Hermes llenó: se relee.
+  useEffect(() => {
+    const f = () => cargar();
+    window.addEventListener('equipo-ia:publicada', f);
+    return () => window.removeEventListener('equipo-ia:publicada', f);
+  }, [cargar]);
 
   const configurar = async (cambios) => {
     setGuardando(true);

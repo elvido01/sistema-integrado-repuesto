@@ -118,7 +118,11 @@ export function CalendarioPromociones({ onReusar }) {
   useEffect(() => {
     const f = () => cargar();
     window.addEventListener('equipo-ia:actualizar', f);
-    return () => window.removeEventListener('equipo-ia:actualizar', f);
+    window.addEventListener('equipo-ia:publicada', f);
+    return () => {
+      window.removeEventListener('equipo-ia:actualizar', f);
+      window.removeEventListener('equipo-ia:publicada', f);
+    };
   }, [cargar]);
 
   const porDia = useMemo(() => {
