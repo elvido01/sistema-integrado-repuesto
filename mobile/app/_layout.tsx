@@ -8,6 +8,7 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BloqueoSuscripcion from '@/src/components/BloqueoSuscripcion';
 import { GuiaMovilProvider } from '@/src/guias/GuiaMovil';
+import { engancharAvisos } from '@/src/services/pushAvisos';
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,13 @@ export default function RootLayout() {
       setSession(session);
     });
   }, []);
+
+  // (21/11/2026) Avisos al teléfono: con sesión se registra el teléfono para
+  // recibir lo de Hermes y la campanita (con el número en el ícono).
+  useEffect(() => {
+    if (!session?.user?.id) return undefined;
+    return engancharAvisos((ruta) => router.push(ruta as any));
+  }, [session?.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     console.log('Navegación lista:', !!rootNavigationState?.key);

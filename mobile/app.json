@@ -2,7 +2,7 @@
   "expo": {
     "name": "Motoflow",
     "slug": "motoflow",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mobile",
@@ -44,7 +44,8 @@
       "blockedPermissions": [
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO"
-      ]
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -106,6 +107,13 @@
         "expo-audio",
         {
           "microphonePermission": "MotoFlow necesita el micrófono para que puedas mandarle notas de voz a Hermes."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1D4ED8",
+          "defaultChannel": "avisos"
         }
       ]
     ],
