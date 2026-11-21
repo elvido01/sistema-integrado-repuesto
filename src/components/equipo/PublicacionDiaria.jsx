@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Bot, CalendarClock, Loader2, Recycle, Sparkles } from 'lucide-react';
-import { mediaDeBundle, precioDelArte, textosReuso } from '@/lib/textoReuso';
+import { mediaDeBundle, precioDelArte } from '@/lib/textoReuso';
+import { COLUMNAS_JOB_REUSO, prefillDesdeBundle } from '@/lib/reusoPublicacion';
 
 // PUBLICACIÓN DIARIA CON HERMES
 //
@@ -15,20 +16,6 @@ import { mediaDeBundle, precioDelArte, textosReuso } from '@/lib/textoReuso';
 // puesta aquí.
 
 const DIAS_APRENDIZAJE = 30;
-
-// Un archivo público que ya no está (404) no se manda a publicar.
-async function existe(url) {
-  try {
-    const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-    return r.ok;
-  } catch {
-    return true; // sin red no se puede saber: que lo diga la vista previa del formulario
-  }
-}
-async function soloLosQueExisten(media) {
-  const pares = await Promise.all(Object.entries(media).map(async ([k, url]) => [k, url, await existe(url)]));
-  return Object.fromEntries(pares.filter(([, , ok]) => ok).map(([k, url]) => [k, url]));
-}
 const hoyRD = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' });
 const dinero = (n) => `RD$${Math.round(Number(n) || 0).toLocaleString('es-DO')}`;
 
@@ -73,7 +60,7 @@ export function PublicacionDiaria({ trabajos, onRevisar, onReusar }) {
     const bundles = (e || []).map((x) => x.reuso_bundle_id).filter(Boolean);
     if (bundles.length) {
       const { data: js } = await supabase.from('hermes_publication_jobs')
-        .select('publication_bundle_id, placement, media_type, image_url, media_url, precio_mostrado, textos, completed_at, created_at')
+        .select(COLUMNAS_JOB_REUSO)
         .in('publication_bundle_id', bundles);
       const porBundle = {};
       (js || []).forEach((j) => { (porBundle[j.publication_bundle_id] ||= []).push(j); });
@@ -119,26 +106,22 @@ export function PublicacionDiaria({ trabajos, onRevisar, onReusar }) {
   const trabajoDe = (id) => (trabajos || []).find((w) => w.id === id);
   // La reutilizada va directo al formulario de publicar: arte viejo, texto nuevo.
   const reusar = async (e, p) => {
-    const jobs = reusos[e.reuso_bundle_id] || [];
     setAbriendo(e.id);
     // Lo que se borró del almacenamiento no se reusa (había reels viejos con
     // 404). Sin video, el formulario arma uno con la imagen de la historia.
-    const media = await soloLosQueExisten(mediaDeBundle(jobs));
-    const { data: stock } = await supabase.rpc('get_stock_actual', { producto_uuid: p.id });
+    const { prefill, error } = await prefillDesdeBundle({
+      bundleId: e.reuso_bundle_id,
+      jobs: reusos[e.reuso_bundle_id] || null,
+      productoId: p.id,
+      programarPara: e.hora_publicar ? `${e.fecha}T${String(e.hora_publicar).slice(0, 5)}` : null,
+      semilla: e.fecha,
+    });
     setAbriendo(null);
-    if (!media.imagen_feed) {
-      toast({ variant: 'destructive', title: 'El arte anterior ya no está', description: 'Elige otra pieza en el Paso 1.' });
+    if (error) {
+      toast({ variant: 'destructive', title: 'No se puede reutilizar', description: `${error} Elige otra pieza en el Paso 1.` });
       return;
     }
-    const viejo = jobs.find((j) => j.textos && Object.keys(j.textos).length)?.textos || {};
-    onReusar({
-      programarPara: e.hora_publicar ? `${e.fecha}T${String(e.hora_publicar).slice(0, 5)}` : null,
-      producto: { ...p, existencia: Number(stock || 0) },
-      sinDescuento: true,
-      titulo: p.descripcion,
-      media,
-      textos: textosReuso({ descripcion: p.descripcion, precio: p.precio, textosViejos: viejo, semilla: e.fecha }),
-    });
+    onReusar(prefill);
   };
   // (06/10/2026) En qué va: elegida → (30 min antes) arte → reel → aviso.
   const etapa = (e, w) => {

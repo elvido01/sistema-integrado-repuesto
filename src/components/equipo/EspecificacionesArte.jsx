@@ -13,7 +13,25 @@ import { useToast } from '@/components/ui/use-toast';
 //
 // No es una lista de deseos: es lo que el Comercial-Creativo lee antes de
 // decidir el título, los colores y la composición.
-export function EspecificacionesArte() {
+// (21/11/2026) Lo mismo sirve para la VOZ DE MARCA (tipo 'voz'): cómo se
+// escriben los textos de cada red. Llega al Creativo en el brief del arte.
+const TEXTOS = {
+  arte: {
+    titulo: 'Cómo deben verse las promociones',
+    ayuda: 'El Comercial-Creativo las lee antes de montar cada pieza. Cámbialas y la siguiente promoción sale distinta, sin tocar nada más.',
+    ejemplo: 'Ej.: el precio siempre en naranja y más grande que el título',
+    vacio: 'Sin reglas. El creativo decidirá por su cuenta.',
+  },
+  voz: {
+    titulo: 'Voz de la marca (cómo se escriben los textos)',
+    ayuda: 'El Comercial-Creativo las sigue al escribir el título y la descripción de cada red. Cámbialas y el siguiente texto sale distinto.',
+    ejemplo: 'Ej.: nunca digas "barato"; di "a buen precio"',
+    vacio: 'Sin reglas de voz. El creativo escribirá a su manera.',
+  },
+};
+
+export function EspecificacionesArte({ tipo = 'arte' }) {
+  const t = TEXTOS[tipo] || TEXTOS.arte;
   const { toast } = useToast();
   const [reglas, setReglas] = useState([]);
   const [nueva, setNueva] = useState('');
@@ -21,18 +39,20 @@ export function EspecificacionesArte() {
   const [guardando, setGuardando] = useState(false);
 
   const cargar = useCallback(() => {
-    supabase.rpc('equipo_criterios_ver', { p_tipo: 'arte' }).then(({ data, error }) => {
+    supabase.rpc('equipo_criterios_ver', { p_tipo: tipo }).then(({ data, error }) => {
       if (error) return;
-      setReglas(Array.isArray(data) ? data : []);
+      const todas = Array.isArray(data) ? data : [];
+      // Las universales ('*') se ven con las de arte, que es donde se aplican.
+      setReglas(tipo === 'arte' ? todas : todas.filter((r) => r.tipo === tipo));
     });
-  }, []);
+  }, [tipo]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
   const guardar = async (clave, texto, activo = true) => {
     setGuardando(true);
     const { error } = await supabase.rpc('equipo_criterio_guardar', {
-      p_tipo: 'arte', p_clave: clave, p_texto: texto, p_orden: null, p_activo: activo,
+      p_tipo: tipo, p_clave: clave, p_texto: texto, p_orden: null, p_activo: activo,
     });
     setGuardando(false);
     if (error) {
@@ -58,15 +78,12 @@ export function EspecificacionesArte() {
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <button type="button" onClick={() => setAbierto((v) => !v)}
         className="flex w-full items-center justify-between text-left">
-        <span className="text-sm font-bold text-slate-800">Cómo deben verse las promociones</span>
+        <span className="text-sm font-bold text-slate-800">{t.titulo}</span>
         <span className="text-[11px] text-slate-400">
           {reglas.length} regla{reglas.length === 1 ? '' : 's'} · {abierto ? 'ocultar' : 'ver'}
         </span>
       </button>
-      <p className="mt-1 text-[11px] text-slate-500">
-        El Comercial-Creativo las lee antes de montar cada pieza. Cámbialas y la
-        siguiente promoción sale distinta, sin tocar nada más.
-      </p>
+      <p className="mt-1 text-[11px] text-slate-500">{t.ayuda}</p>
 
       {abierto && (
         <div className="mt-3 space-y-2">
@@ -84,14 +101,14 @@ export function EspecificacionesArte() {
 
           {reglas.length === 0 && (
             <p className="py-2 text-center text-[11px] text-slate-400">
-              Sin reglas. El creativo decidirá por su cuenta.
+              {t.vacio}
             </p>
           )}
 
           <Textarea
             value={nueva}
             onChange={(e) => setNueva(e.target.value)}
-            placeholder="Ej.: el precio siempre en naranja y más grande que el título"
+            placeholder={t.ejemplo}
             rows={2}
             className="text-xs"
           />

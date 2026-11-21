@@ -15,7 +15,7 @@ import { Helmet } from 'react-helmet';
 import {
   Loader2, RefreshCw, ShieldCheck, Bot, Database, Sparkles, Check, X,
   MessageSquarePlus, AlertTriangle, Clock, ChevronRight, RotateCcw, Ban, Send,
-  Cpu, Cloud, Laptop, Undo2, PlugZap, ClipboardList, CalendarDays, BarChart3, Package, Palette, Users,
+  Cpu, Cloud, Laptop, Undo2, PlugZap, ClipboardList, CalendarDays, CalendarRange, BarChart3, Package, Palette, Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -32,6 +32,8 @@ import { PiezasDeLaSemana } from '@/components/equipo/PiezasDeLaSemana';
 import { AnunciosDelSuplidor } from '@/components/equipo/AnunciosDelSuplidor';
 import { CodigosDePromocion } from '@/components/equipo/CodigosDePromocion';
 import { LinkEnLaBio } from '@/components/equipo/LinkEnLaBio';
+import { CalendarioPromociones } from '@/components/equipo/CalendarioPromociones';
+import { RecomendacionesPromo } from '@/components/equipo/RecomendacionesPromo';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -245,9 +247,10 @@ const Etiqueta = ({ mapa, valor }) => {
 const CLAVE_PESTANA = 'equipoIA.pestana';
 const PESTANAS = [
   { id: 'hoy', nombre: 'Hoy', icono: CalendarDays, ayuda: 'Las 3 del día, lo que espera tu aprobación y publicar.' },
-  { id: 'resultados', nombre: 'Resultados', icono: BarChart3, ayuda: 'Qué publicación vende, códigos, link de la bio y videos publicados.' },
+  { id: 'calendario', nombre: 'Calendario', icono: CalendarRange, ayuda: 'La semana o el mes con lo publicado, lo programado y lo que eligió Hermes.' },
+  { id: 'resultados', nombre: 'Resultados', icono: BarChart3, ayuda: 'Qué hacer ahora, qué publicación vende, códigos, link de la bio y videos publicados.' },
   { id: 'inventario', nombre: 'Inventario', icono: Package, ayuda: 'Fotos que faltan, agotados que se venden y lo que anuncia el suplidor.' },
-  { id: 'estilo', nombre: 'Estilo', icono: Palette, ayuda: 'Reglas del arte, piezas modelo y reels modelo.' },
+  { id: 'estilo', nombre: 'Estilo', icono: Palette, ayuda: 'Reglas del arte, voz de la marca, piezas modelo y reels modelo.' },
   { id: 'equipo', nombre: 'Equipo', icono: Users, ayuda: 'Los agentes, su motor y la bitácora de trabajos.' },
 ];
 
@@ -703,8 +706,15 @@ const EquipoIAPage = () => {
         <PromocionPublicar prefill={prefillPromo} onLibre={() => setPrefillPromo(null)} />
       </div>
 
-      {/* ── RESULTADOS: qué vende, códigos, link de la bio, videos ── */}
+      {/* ── CALENDARIO: la semana o el mes de un vistazo ── */}
+      <div className={pestana === 'calendario' ? '' : 'hidden'} role="tabpanel">
+        {pestana === 'calendario' && <CalendarioPromociones onReusar={usarEnPublicar} />}
+      </div>
+
+      {/* ── RESULTADOS: qué hacer, qué vende, códigos, link de la bio, videos ── */}
       <div className={pestana === 'resultados' ? '' : 'hidden'} role="tabpanel">
+        {/* (21/11/2026) Los números en palabras, con acción cuando la hay. */}
+        <RecomendacionesPromo onReusar={usarEnPublicar} />
         {/* (10/10/2026) ¿Qué publicación vende? Solo con feat_medicion_publicaciones. */}
         <EfectividadPublicaciones />
         {/* (01/11/2026) El video horizontal del fin de semana con las piezas publicadas. */}
@@ -768,7 +778,10 @@ const EquipoIAPage = () => {
       {/* ── ESTILO: cómo debe verse una promoción ── */}
       <div className={pestana === 'estilo' ? '' : 'hidden'} role="tabpanel">
         <div className="mb-4 grid items-start gap-3 lg:grid-cols-2">
-          <EspecificacionesArte />
+          <div className="space-y-3">
+            <EspecificacionesArte />
+            <EspecificacionesArte tipo="voz" />
+          </div>
           <PiezasModelo />
         </div>
         {/* Lo mismo para video: reels que el dueño admira y la receta de cada uno. */}

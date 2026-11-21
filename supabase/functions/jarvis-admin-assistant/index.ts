@@ -16,6 +16,9 @@ Reglas:
 - Solo actúas cuando el administrador te pregunta.
 - Por ahora NO ejecutas acciones ni modificas datos. Solo analizas y recomiendas.
 - Usa exclusivamente el contexto JSON recibido. Si no hay datos suficientes, dilo claro.
+- Si el contexto trae "promociones_60d" (publicaciones en redes): el alcance son personas que la vieron;
+  uds_semana_antes y uds_semana_despues son unidades de esa pieza vendidas 7 días antes y después de publicar.
+  Una promoción "funcionó" si vendió más después que antes. Nombra la pieza y los números.
 - Responde pensado para voz: 2 a 5 frases, directo, sin tablas largas.
 - Si hay riesgo operativo, dilo y sugiere una próxima acción concreta.`;
 
@@ -58,7 +61,7 @@ Deno.serve(async (req: Request) => {
     if (!message) return json({ ok: false, error: 'mensaje_vacio' }, 400);
     if (message.length > 1000) return json({ ok: false, error: 'mensaje_muy_largo' }, 400);
 
-    const context = await loadBusinessContext(supabase, profile.tenant_id);
+    const context = await loadBusinessContext(supabase, profile.tenant_id, message);
     const llm = await callOpenAI({
       message,
       context,
@@ -115,7 +118,45 @@ async function tenantIsEnterprise(supabase: any, tenantId: string) {
     && String(sub?.planes?.nombre || '').toLowerCase() === 'enterprise';
 }
 
-async function loadBusinessContext(supabase: any, tenantId: string) {
+// (21/11/2026) "¿Cómo le fue a la promoción del Motul?", "¿qué red me trae
+// más clientes?": la misma medición de Equipo IA → Resultados, por empresa.
+// Solo cuando la pregunta va de promociones, para no gastar tokens de más.
+const PREGUNTA_PROMO = /promo|publica|post|reel|red(es)?\b|instagram|facebook|tiktok|youtube|alcance|campa(ñ|n)a|anuncio|hermes|equipo ia/i;
+
+async function loadPromociones(supabase: any, tenantId: string) {
+  const { data, error } = await supabase.rpc('_efectividad_de', { p_tenant: tenantId, p_dias: 60 });
+  if (error || !Array.isArray(data)) return null;
+  const n = (v: any) => Number(v) || 0;
+  const filas = data.map((f: any) => ({
+    pieza: f.descripcion,
+    fecha: f.publicado_at ? new Date(f.publicado_at).toLocaleDateString('es-DO', { timeZone: 'America/Santo_Domingo' }) : null,
+    formato: f.formato,
+    redes: f.redes,
+    objetivo: f.objetivo,
+    con_descuento: f.con_descuento,
+    alcance: n(f.alcance),
+    interacciones: n(f.interacciones),
+    uds_semana_antes: n(f.uds_antes),
+    uds_semana_despues: n(f.uds_despues),
+    ventas_despues_rd: n(f.ventas_despues),
+    ventas_con_codigo: n(f.ventas_con_codigo),
+    dias_medidos: n(f.dias_despues),
+  }));
+  const porRed: Record<string, { publicaciones: number; alcance: number; ventas_con_codigo: number }> = {};
+  filas.forEach((f: any) => (f.redes || []).forEach((r: string) => {
+    const x = (porRed[r] ||= { publicaciones: 0, alcance: 0, ventas_con_codigo: 0 });
+    x.publicaciones += 1; x.alcance += f.alcance; x.ventas_con_codigo += f.ventas_con_codigo;
+  }));
+  return {
+    total_publicaciones: filas.length,
+    vendieron_mas_despues: filas.filter((f: any) => f.dias_medidos >= 3 && f.uds_semana_despues > f.uds_semana_antes).length,
+    por_red: porRed,
+    // Las 40 más recientes: suficiente para preguntar por una pieza.
+    publicaciones: filas.slice(0, 40),
+  };
+}
+
+async function loadBusinessContext(supabase: any, tenantId: string, message = '') {
   const [chatCtx, ventas, cotizaciones, eventos] = await Promise.all([
     supabase.rpc('ai_chat_context_summary', { p_tenant_id: tenantId }).then((r: any) => r.data).catch(() => null),
     supabase.from('facturas').select('id,total,estado,fecha').eq('estado', 'PAGADA').gte('fecha', new Date(Date.now() - 7 * 86400000).toISOString()).limit(200).then((r: any) => r.data || []).catch(() => []),
@@ -126,7 +167,9 @@ async function loadBusinessContext(supabase: any, tenantId: string) {
   const totalVentas7d = ventas.reduce((sum: number, row: any) => sum + Number(row.total || 0), 0);
   const totalCotizado7d = cotizaciones.reduce((sum: number, row: any) => sum + Number(row.total_cotizacion || 0), 0);
 
+  const promociones = PREGUNTA_PROMO.test(message) ? await loadPromociones(supabase, tenantId).catch(() => null) : null;
   return {
+    ...(promociones ? { promociones_60d: promociones } : {}),
     resumen_ai_ceo: chatCtx,
     ventas_7d: { cantidad: ventas.length, total: totalVentas7d },
     cotizaciones_7d: { cantidad: cotizaciones.length, total: totalCotizado7d, ultimas: cotizaciones.slice(0, 8) },
