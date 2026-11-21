@@ -462,6 +462,20 @@ const EquipoIAPage = () => {
     cargar(true);
   };
 
+  // (21/11/2026) Las de más de 3 días sin aprobar, de una vez.
+  const descartarViejas = async () => {
+    if (!pendViejas.length) return;
+    if (!window.confirm(`¿Descartar ${pendViejas.length} promoción(es) de hace más de 3 días? No se publican.`)) return;
+    const res = await Promise.all(pendViejas.map((ap) => supabase.rpc('equipo_decidir', {
+      p_aprobacion_id: ap.id, p_decision: 'rejected', p_comentario: 'Descartada por vieja (más de 3 días sin aprobar).',
+    })));
+    const fallas = res.filter((r) => r.error).length;
+    toast(fallas
+      ? { variant: 'destructive', title: `No se pudieron descartar ${fallas}`, description: res.find((r) => r.error).error.message }
+      : { title: `${pendViejas.length} descartada(s)` });
+    cargar(true);
+  };
+
   const accionTrabajo = async (id, accion) => {
     const { error } = await supabase.rpc('equipo_trabajo_accion', { p_trabajo_id: id, p_accion: accion });
     if (error) toast({ variant: 'destructive', title: 'No se pudo', description: error.message });
@@ -626,10 +640,16 @@ const EquipoIAPage = () => {
               <p className="mb-2 text-[11px] text-slate-500">Nada nuevo de los últimos 3 días.</p>
             )}
             {pendViejas.length > 0 && (
-              <button type="button" onClick={() => setVerViejas((v) => !v)}
-                className="mb-2 text-[11px] font-semibold text-violet-700 hover:underline">
-                {verViejas ? 'Ocultar' : 'Ver'} {pendViejas.length} más vieja{pendViejas.length === 1 ? '' : 's'} (más de 3 días sin aprobar)
-              </button>
+              <div className="mb-2 flex flex-wrap items-center gap-3">
+                <button type="button" onClick={() => setVerViejas((v) => !v)}
+                  className="text-[11px] font-semibold text-violet-700 hover:underline">
+                  {verViejas ? 'Ocultar' : 'Ver'} {pendViejas.length} más vieja{pendViejas.length === 1 ? '' : 's'} (más de 3 días sin aprobar)
+                </button>
+                <button type="button" onClick={descartarViejas}
+                  className="text-[11px] font-semibold text-red-600 hover:underline">
+                  Descartar {pendViejas.length === 1 ? 'la vieja' : `las ${pendViejas.length} viejas`}
+                </button>
+              </div>
             )}
 
             <div className="space-y-3">
@@ -640,10 +660,20 @@ const EquipoIAPage = () => {
                     Las promociones se aprueban arriba, en el <b>paso 2</b>: ahí ves la imagen grande y, al
                     aprobarla, el formulario de publicar se llena solo.
                   </p>
-                  <Button size="sm" variant="outline" className="mt-2"
-                    onClick={() => setEnfocarPromo({ trabajoId: ap.trabajo_id, en: Date.now() })}>
-                    Verla arriba
-                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline"
+                      onClick={() => setEnfocarPromo({ trabajoId: ap.trabajo_id, en: Date.now() })}>
+                      Verla arriba
+                    </Button>
+                    {/* (21/11/2026) El dueño: "ponle un botón de descartar". Cierra
+                        el trabajo entero (como "Descartar todo"); la pieza puede
+                        volver a salir en el Paso 1 más adelante. */}
+                    <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50"
+                      title="Cierra esta promoción sin publicarla."
+                      onClick={() => decidir(ap.id, 'rejected')}>
+                      <X className="mr-1 h-3 w-3" /> Descartar
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div key={ap.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
