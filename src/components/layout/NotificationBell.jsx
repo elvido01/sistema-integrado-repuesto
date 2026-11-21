@@ -31,6 +31,10 @@ const NotificationBell = () => {
             // (12/11/2026) Vence un compromiso con la DGII.
             openPanel('mi-contabilidad');
             setPanelOpen(false);
+        } else if (notif.tipo === 'ecf_vencimiento') {
+            // (21/11/2026) Las secuencias e-CF vencen: donde se cargan y se pone la fecha.
+            openPanel('config_sistema');
+            setPanelOpen(false);
         } else if (['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(notif.tipo)) {
             // (12/11/2026) Avisos del CRM (cliente esperando, resumen del
             // embudo, quiere comprar / reclamo): al Sales Hub.
@@ -132,6 +136,7 @@ const NotificationBell = () => {
                                                     : n.tipo === 'resumen_ai_ceo' ? 'Doble clic para abrir MOTOFLOW IA CEO'
                                                     : n.tipo === 'crm_seguimiento' ? 'Doble clic para abrir Seguimientos de Hoy'
                                                     : n.tipo === 'contab_compromiso' ? 'Doble clic para abrir Mi Contabilidad'
+                                                    : n.tipo === 'ecf_vencimiento' ? 'Doble clic para abrir Configuración del Sistema'
                                                     : ['crm_caliente', 'crm_reporte', 'crm_embudo'].includes(n.tipo) ? 'Doble clic para abrir el Sales Hub'
                                                     : 'Doble clic para ir al módulo'
                                                 }

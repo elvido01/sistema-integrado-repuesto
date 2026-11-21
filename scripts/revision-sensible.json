@@ -304,7 +304,7 @@
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
-    "src/components/configuracion/DgiiCertificadoUploader.jsx": "cedb5cd979796dcd",
+    "src/components/configuracion/DgiiCertificadoUploader.jsx": "a426f774673025f3",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
@@ -464,16 +464,10 @@
     "sql/elite_royal_prestige_compras_2025.sql": "fb3cd8b2c20ecf7b",
     "sql/documentacion_registro_dgii.sql": "9c0aaf68bd93130e",
     "sql/prestamo_descripcion.sql": "3a1c99e39a4801f7",
-    "src/components/financiera/EditarDescripcionPrestamo.jsx": "0d8f8a02b1c5f176"
+    "src/components/financiera/EditarDescripcionPrestamo.jsx": "0d8f8a02b1c5f176",
+    "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high cerrar familia al cobrar: 8 hallazgos; arreglados respuesta tardia que cerraba otra familia, error de red deja lo pagado marcado (se relee), boton trabado mientras imprime, foco en pestana escondida, foco perdido tras el dialogo de imprimir, forma inicial repetida; no cambiado: factura/estado de cuenta ya no quedan a un clic tras cobrar (lo pidio el dueno), dialogos abiertos (no se pueden abrir mientras se cobra)",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-08",
       "nota": "code-review high ojito recibos de hoy: 8 hallazgos; arreglados perder lo marcado sin aviso (confirm), aperturas que se pisan (token en abrirFamilia), doble clic mientras carga, scroll aunque no abrio, scroll de toda la pagina (nearest), aria-label, helper verFamilia",
@@ -1022,6 +1016,14 @@
         "src/components/compras/CompraFooter.jsx",
         "src/components/compras/CompraHeader.jsx",
         "src/pages/ComprasPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-21",
+      "nota": "code-review high (aviso de vencimiento de secuencias e-CF): corregidos — nombre de la empresa en título/correo, solo integraciones activas en producción de empresas activas, no cuenta empresas sin admin, aviso en pantalla con la fecha guardada y solo en Produccion, y el viejo fallo de hora (después de 7:59 p.m. decía 'ya pasó'). Ensayado con datos reales: hoy avisa a Ycast, Jopar y Oscar (40 días). Aceptado: el chequeo de salud del superadmin (30 días) sigue aparte.",
+      "archivos": [
+        "sql/aviso_vencimiento_ecf.sql",
+        "src/components/configuracion/DgiiCertificadoUploader.jsx"
       ]
     }
   ]

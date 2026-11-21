@@ -55,8 +55,20 @@ function problemaVencimiento(v, ambiente) {
   if (n === null) return 'La fecha de vencimiento de las secuencias no es válida. Escríbela como 31-12-2027.';
   if (n === '') return ambiente === 'Produccion' ? 'En producción hace falta la fecha de vencimiento de las secuencias (la de la Oficina Virtual).' : null;
   const [d, m, a] = n.split('-').map(Number);
-  if (Date.UTC(a, m - 1, d, 23, 59) < Date.now()) return `Esa fecha (${n}) ya pasó: las secuencias estarían vencidas. Revisa el año.`;
+  if (new Date(a, m - 1, d, 23, 59, 59).getTime() < Date.now()) return `Esa fecha (${n}) ya pasó: las secuencias estarían vencidas. Revisa el año.`;
   return null;
+}
+
+// (21/11/2026) Días que faltan para el vencimiento (negativo = ya venció);
+// null si la fecha no es válida. La fecha NO se cambia sola: es la de la
+// autorización de la DGII. Lo que se hace es avisar a tiempo.
+function diasParaVencer(v) {
+  const n = normalizarVencimiento(v);
+  if (!n) return null;
+  const [d, m, a] = n.split('-').map(Number);
+  const hoy = new Date();
+  const hoyUTC = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  return Math.round((Date.UTC(a, m - 1, d) - hoyUTC) / 86400000);
 }
 
 const AMBIENTES = [
@@ -633,6 +645,18 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
               {problemaVencimiento(fechaVencimientoSecuencia, ambiente)} Así no se puede guardar.
             </p>
           )}
+          {(() => {
+            // Con la fecha GUARDADA y solo en producción (no con lo que se está escribiendo).
+            if (info?.ambiente !== 'Produccion') return null;
+            const dias = diasParaVencer(info?.fecha_vencimiento_secuencia);
+            if (dias === null || dias < 0 || dias > 45) return null;
+            return (
+              <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
+                {dias === 0 ? 'Tus secuencias vencen HOY.' : `Tus secuencias vencen en ${dias} día${dias === 1 ? '' : 's'}.`}{' '}
+                Pide las nuevas en la Oficina Virtual (Solicitudes → Comprobantes Fiscales); cuando las aprueben, cárgalas aquí y cambia esta fecha por la «Fecha Vencimiento» nueva.
+              </p>
+            );
+          })()}
         </div>
       </div>
 
