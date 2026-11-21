@@ -337,10 +337,10 @@
     "src/components/ventas/SugerenciasEquivalentesModal.jsx": "5f1402e6c917e0e1",
     "src/components/ventas/VentasFooter.jsx": "d937814b113cacba",
     "src/components/ventas/VentasHeader.jsx": "92b4d604ebcc8007",
-    "src/components/ventas/VentasTable.jsx": "5f4f6f02114febfa",
+    "src/components/ventas/VentasTable.jsx": "ea37ab94cbea29f8",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "deaa61e79f7e96fb",
+    "src/hooks/useVentas.js": "7c364f077af2ff11",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -468,16 +468,6 @@
     "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3"
   },
   "historial": [
-    {
-      "fecha": "2026-11-09",
-      "nota": "code-review high: 10 hallazgos; arreglados 9 (id de linea PIES en orden de compra, lineas repetidas al reabrir, precio de la presentacion en el modal, agente sin modal, equivalentes, colores desactivados se reactivan, detalle movil, una sola llamada, existencia del color); aceptado: redondeo a 4 decimales en barras que no dividen exacto (20 pies es exacto)",
-      "archivos": [
-        "src/components/ventas/VarianteVentaModal.jsx",
-        "src/hooks/useVentas.js",
-        "src/pages/VentasPage.jsx",
-        "src/services/sendToOrdenCompra.js"
-      ]
-    },
     {
       "fecha": "2026-11-09",
       "nota": "code-review high (tanda tickets 437 / plan / cotizacion pies): 10 hallazgos; arreglados 9 (QZ manda bytes en base64, WebUSB byte a byte + ajuste Star, linea por pies aparte al reabrir y desde cotizacion/pedido con idsDeLinea, primera linea PIES tambien aparte, trigger tambien al borrar, sin respaldo que cambiaba solo la etiqueta del plan, regex sin caracteres invisibles, fraccion que redondea a 0 avisa); aceptado: consulta extra al escoger color",
@@ -1023,6 +1013,14 @@
       "nota": "code-review high: ProductSearchModal títulos fijos — corregido: fila elegida con flechas tapada por el encabezado (scroll-pt-12) y separador del encabezado (border-separate + inset shadow); preexistentes sin tocar: Table de ui rompe sticky en otras pantallas y div dentro de tr en fila de empresa vieja",
       "archivos": [
         "src/components/ventas/ProductSearchModal.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-21",
+      "nota": "code-review high x2: servicios con precio libre. Corregido: comparación de precio en mismas unidades (caja manda precio_catalogo), servicios a precios distintos en líneas separadas, naturaleza síncrona (lista de servicios), autor conservado al editar solo por admin, cliente no repisa precio de servicio, pedido/Magna/cotización con naturaleza, precio>0. Pendiente preexistente: re-editar factura con descuento lo aplica doble (precio guardado neto)",
+      "archivos": [
+        "src/components/ventas/VentasTable.jsx",
+        "src/hooks/useVentas.js"
       ]
     }
   ]

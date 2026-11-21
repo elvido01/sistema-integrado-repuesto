@@ -258,6 +258,10 @@ export const useVentas = () => {
       toast({ title: 'Error', description: 'La cantidad debe ser mayor a 0', variant: 'destructive' });
       return;
     }
+    if (currentItem.naturaleza === 'servicio' && !(Number(currentItem.precio) > 0)) {
+      toast({ title: 'Falta el precio', description: 'Escribe el precio de este trabajo (mayor que 0).', variant: 'destructive' });
+      return;
+    }
 
     const bajoCosto = checkBajoCosto(currentItem);
     if (bajoCosto) {
@@ -280,7 +284,16 @@ export const useVentas = () => {
       }
 
       // Mode: adding new item — check if product already exists
-      const existingIndex = prev.findIndex(i => i.id === currentItem.id);
+      // (21/11/2026) Dos manos de obra a precios distintos: cada una en su
+      // línea (sumarlas dejaba el primer precio y cobraba de menos). Al mismo
+      // precio, se suma a la línea de ese precio.
+      const centavos = (v) => Math.round(Number(v) * 100);
+      const existingIndex = currentItem.naturaleza === 'servicio'
+        ? prev.findIndex(i => i.producto_id === currentItem.producto_id && centavos(i.precio) === centavos(currentItem.precio))
+        : prev.findIndex(i => i.id === currentItem.id);
+      if (existingIndex < 0 && currentItem.naturaleza === 'servicio' && prev.some(i => i.id === currentItem.id)) {
+        return [...prev, { ...currentItem, id: `${currentItem.id}-${Date.now()}` }];
+      }
       if (existingIndex >= 0) {
         toast({ title: 'Producto ya existe', description: 'El producto ya está en la lista. Se sumará la cantidad.', variant: 'default' });
         const updatedItems = [...prev];
@@ -531,6 +544,9 @@ export const useVentas = () => {
     if (!products) return;
 
     setItems(prev => prev.map(item => {
+      // (21/11/2026) El precio de un servicio lo escribió el cajero para ESTE
+      // trabajo: el nivel de precio del cliente no lo toca.
+      if (item.naturaleza === 'servicio') return item;
       const product = products.find(p => p.id === item.producto_id);
       if (!product?.presentaciones?.length) return item;
 
@@ -683,6 +699,23 @@ export const useVentas = () => {
   // La línea de un producto con el precio de la factura (presentación que
   // factura y nivel de precio del cliente). La usan la fila amarilla
   // (addProductToInvoice) y la pantalla táctil (agregarLineaDirecta).
+  // (21/11/2026) ¿Bien o servicio? La búsqueda no lo trae. Los servicios de
+  // la empresa (mano de obra…) se cargan una vez: así la línea lo sabe al
+  // instante y en los SERVICIOS cualquier cajero escribe el precio.
+  const serviciosRef = useRef(new Set());
+  useEffect(() => {
+    if (!tenantId) return undefined;
+    let vivo = true;
+    supabase.from('productos').select('id').eq('naturaleza', 'servicio').limit(2000)
+      .order('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[ventas] no se pudo leer la lista de servicios:', error.message); return; }
+        if (vivo && data) serviciosRef.current = new Set(data.map((p) => p.id));
+      });
+    return () => { vivo = false; };
+  }, [tenantId]);
+  const naturalezaDe = (id, dada) => dada || (serviciosRef.current.has(id) ? 'servicio' : 'bien');
+
   const armarLinea = (product, opciones = {}) => {
     let priceToUse = product.precio || 0;
     let maxDesc = product.max_descuento || 0;
@@ -745,6 +778,10 @@ export const useVentas = () => {
       max_descuento: maxDesc,
       existencia_morla: product.existencia ?? product.existencia_morla ?? null,
       local_suplidor_sugerido: product.local_suplidor_sugerido || null,
+      naturaleza: naturalezaDe(product.id, product.naturaleza),
+      // El precio que puso el sistema: si el cajero cobra un servicio a otro
+      // precio, la factura guarda este como precio de catálogo.
+      precio_lista: priceToUse,
     };
 
     if (opciones.cantidad > 0) {
@@ -1339,6 +1376,19 @@ export const useVentas = () => {
           itbis: montoItbis,
           importe: importeNeto,
           costo_unitario: Number(item.costo_unitario || 0),
+          // (21/11/2026) Servicio a precio distinto del de catálogo: queda
+          // registrado (la base pone quién, si no viene de antes).
+          ...(() => {
+            const lista = item.precio_lista;
+            if (item.naturaleza !== 'servicio' || lista == null
+                || Math.round(Number(lista) * 100) === Math.round(precioConItbis * 100)) return {};
+            const mismoPrecio = item.precio_cargado != null
+              && Math.round(Number(item.precio_cargado) * 100) === Math.round(precioConItbis * 100);
+            return {
+              precio_catalogo: Number(lista),
+              ...(mismoPrecio && item.precio_puesto_por ? { precio_puesto_por: item.precio_puesto_por } : {}),
+            };
+          })(),
         };
       });
 
@@ -1800,6 +1850,9 @@ export const useVentas = () => {
           max_descuento: d.productos?.max_descuento || 0,
           naturaleza: d.naturaleza || d.productos?.naturaleza || 'bien',
           servicio_tipo: d.servicio_tipo || d.productos?.servicio_tipo || null,
+          precio_lista: d.precio_catalogo != null ? Number(d.precio_catalogo) : unitPriceWithItbis,
+          precio_cargado: unitPriceWithItbis,
+          precio_puesto_por: d.precio_puesto_por || null,
         };
       });
 
@@ -1874,6 +1927,9 @@ export const useVentas = () => {
           importe: importeNeto,
           costo_unitario: Number(d.productos?.costo || 0),
           max_descuento: d.productos?.max_descuento || d.descuento_pct || 0,
+          naturaleza: naturalezaDe(d.producto_id, d.productos?.naturaleza),
+          servicio_tipo: d.productos?.servicio_tipo || null,
+          precio_lista: precioConItbis,
         };
       });
 
@@ -1950,6 +2006,9 @@ export const useVentas = () => {
           importe: precioConItbis,
           costo_unitario: 0,
           max_descuento: 0,
+          naturaleza: naturalezaDe(servicio.id, servicio.naturaleza),
+          servicio_tipo: servicio.servicio_tipo || null,
+          precio_lista: precioConItbis,
         };
       });
 
@@ -2021,6 +2080,9 @@ export const useVentas = () => {
           itbis: d.itbis,
           importe: d.importe,
           costo_unitario: Number(d.productos?.costo || 0),
+          naturaleza: naturalezaDe(d.producto_id, d.productos?.naturaleza),
+          servicio_tipo: d.productos?.servicio_tipo || null,
+          precio_lista: Number(d.precio || 0),
         };
       });
 

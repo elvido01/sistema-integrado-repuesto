@@ -103,7 +103,8 @@ const VentasTable = ({
   // Las mismas funciones de la tabla (fila amarilla = tarjeta "por agregar",
   // mismo commit con su bloqueo bajo costo y tope de descuento), en tarjetas.
   if (movil) {
-    const puedePrecio = userRole === 'admin' || userRole === 'owner';
+    // (21/11/2026) Los SERVICIOS (mano de obra) los cobra cualquier cajero: el precio cambia en cada trabajo.
+    const puedePrecio = userRole === 'admin' || userRole === 'owner' || currentItem?.naturaleza === 'servicio';
     const caja = 'h-11 w-full rounded-md border border-gray-300 bg-white px-2 text-right font-mono text-base font-bold';
     const cantidadMas = (d) => updateCurrentItem('cantidad', Math.max(1, Number(currentItem?.cantidad || 0) + d));
     // La tarjeta amarilla es una línea YA agregada (se tocó para corregirla).
@@ -272,7 +273,7 @@ const VentasTable = ({
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       e.stopPropagation(); // Evitar que llegue a listeners globales
-                      if (userRole === 'admin') {
+                      if (userRole === 'admin' || userRole === 'owner' || currentItem?.naturaleza === 'servicio') {
                         document.getElementById('input-precio')?.focus();
                         document.getElementById('input-precio')?.select();
                       } else {
@@ -290,7 +291,8 @@ const VentasTable = ({
                   className="w-full h-6 text-right font-black text-blue-900 bg-transparent border-none outline-none hide-spinner text-[14px] focus:bg-white/50"
                   value={currentItem ? currentItem.precio : ''}
                   onChange={(e) => updateCurrentItem && updateCurrentItem('precio', e.target.value)}
-                  disabled={!currentItem || (userRole !== 'admin' && userRole !== 'owner')}
+                  disabled={!currentItem || (userRole !== 'admin' && userRole !== 'owner' && currentItem.naturaleza !== 'servicio')}
+                  title={currentItem?.naturaleza === 'servicio' && userRole !== 'admin' && userRole !== 'owner' ? 'Servicio: escribe el precio de este trabajo' : undefined}
                   min="0"
                   onDoubleClick={handleInputDoubleClick}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); document.getElementById('input-descuento')?.focus(); document.getElementById('input-descuento')?.select(); } }}
