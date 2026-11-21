@@ -293,9 +293,9 @@
     "src/components/common/pdf/reciboPDF.js": "5f98be62fb5785d5",
     "src/components/common/pdf/reciboPagoFinancieraPDF.js": "2406de5e17bc89cc",
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
-    "src/components/compras/CompraDetalles.jsx": "6e9b10e09deaf43f",
-    "src/components/compras/CompraFooter.jsx": "4f34b674fa9b88e8",
-    "src/components/compras/CompraHeader.jsx": "fc265e6479cd4e21",
+    "src/components/compras/CompraDetalles.jsx": "8fd91020eb3f079f",
+    "src/components/compras/CompraFooter.jsx": "2fd05326e54dc046",
+    "src/components/compras/CompraHeader.jsx": "ced7745fece99219",
     "src/components/compras/CompraInteligentePanel.jsx": "ff804e5782a420d7",
     "src/components/compras/InvoiceUploadModal.jsx": "a209c4511074cee9",
     "src/components/compras/PrecisionOcrModal.jsx": "900ae224342d8381",
@@ -354,7 +354,7 @@
     "src/lib/printNominaFirmas.js": "3dc0d0313bba5afb",
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
-    "src/pages/ComprasPage.jsx": "cd360a2822e0ce45",
+    "src/pages/ComprasPage.jsx": "a5b0d4604acc39a6",
     "src/pages/Configuracion/CierreCajaPage.jsx": "95b6b2a85dcd2530",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
@@ -467,13 +467,6 @@
     "src/components/financiera/EditarDescripcionPrestamo.jsx": "0d8f8a02b1c5f176"
   },
   "historial": [
-    {
-      "fecha": "2026-11-08",
-      "nota": "code-review high e4a6689b0..b8d970ac4 (logo punteado, ñ y tildes, buscador): 10 hallazgos; arreglados busqueda con coma/punto vacia, estudiantes perdidos por el limite (ahora imatch exacto sin tildes), ñ en la base, modo chino de clonicas (FS .), º ª °, SVG sin tamano, achicado real por mitades, constantes muertas y quitarTildes repetido; no cambiado: centrado Star asume papel de 80 mm (todas las Star del grupo son 80 mm), cache del logo ya se borra al fallar",
-      "archivos": [
-        "src/pages/colegio/CajaColegioPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-08",
       "nota": "code-review high cerrar familia al cobrar: 8 hallazgos; arreglados respuesta tardia que cerraba otra familia, error de red deja lo pagado marcado (se relee), boton trabado mientras imprime, foco en pestana escondida, foco perdido tras el dialogo de imprimir, forma inicial repetida; no cambiado: factura/estado de cuenta ya no quedan a un clic tras cobrar (lo pidio el dueno), dialogos abiertos (no se pueden abrir mientras se cobra)",
@@ -1019,6 +1012,16 @@
         "src/pages/FinancieraPrestamosPage.jsx",
         "src/pages/NotaCreditoFinancieraPage.jsx",
         "src/pages/ReciboPagoFinancieraPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-21",
+      "nota": "code-review high (rediseño compacto de Compras + modo oscuro global): corregidos — bordes oscuros más claros que la tarjeta, regla de cajas de texto con peso cero (los avisos ámbar y dark: ganan), quitado color:inherit en transparentes, '(F3)' fuera del texto del suplidor, altura de la tabla MEDIDA (ResizeObserver) y probada a 1100x800/1600x900/1920x1050 sin desborde, readonly del suplidor no se apaga, generador con rutas absolutas. Solo diseño: mismos campos, ids y marcas de la guía; quitadas 2 listas de retención de adorno que no se guardaban.",
+      "archivos": [
+        "src/components/compras/CompraDetalles.jsx",
+        "src/components/compras/CompraFooter.jsx",
+        "src/components/compras/CompraHeader.jsx",
+        "src/pages/ComprasPage.jsx"
       ]
     }
   ]

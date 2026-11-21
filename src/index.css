@@ -44,20 +44,22 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    /* (21/11/2026) Fondo base menos negro: combina con las tarjetas del modo oscuro. */
+    --background: 222 47% 11%;
     --foreground: 210 40% 98%;
 
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 217 33% 17%;
     --popover-foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    --card: 217 33% 17%;
     --card-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    /* (21/11/2026) Bordes más claros que las tarjetas: si no, no se ven. */
+    --border: 215 25% 27%;
+    --input: 215 25% 27%;
     --ring: 224.3 76.3% 48%;
 
     --primary: 210 40% 98%;

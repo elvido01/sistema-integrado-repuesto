@@ -23,7 +23,7 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
   };
 
   return (
-    <div className="mt-4 border rounded shadow-sm bg-white overflow-hidden">
+    <div className="border rounded shadow-sm bg-white overflow-hidden">
       {/* Header Row */}
       <div className="grid grid-cols-[120px_1fr_70px_70px_100px_80px_100px_40px_120px_40px] gap-0 bg-gray-100 border-b divide-x divide-gray-300">
         <div className="px-2 py-1 text-[10px] font-bold text-gray-600 uppercase">CODIGO</div>
@@ -150,7 +150,8 @@ const CompraDetalles = ({ currentDetalle, setCurrentDetalle, detalles, addDetall
       </div>
 
       {/* Items List Table */}
-      <div className="max-h-[350px] overflow-y-auto">
+      {/* (21/11/2026) La lista crece con la ventana (antes, fija en 350 px). */}
+      <div className="overflow-y-auto" data-lista-compra style={{ height: 'max(240px, calc(100vh - var(--compra-resto, 490px)))' }}>
         <Table className="border-collapse">
           <TableBody>
             {detalles.length === 0 ? (

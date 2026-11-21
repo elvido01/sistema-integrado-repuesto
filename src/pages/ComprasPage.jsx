@@ -35,6 +35,30 @@ const ComprasPage = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  // (21/11/2026) La tabla de artículos llena lo que sobra de la ventana. Se
+  // mide lo que ocupa todo lo demás (encabezado, pie, que cambian según el
+  // ancho y los campos que aparecen) y se pasa como --compra-resto.
+  const raizCompraRef = useRef(null);
+  useEffect(() => {
+    const raiz = raizCompraRef.current;
+    if (!raiz || typeof ResizeObserver === 'undefined') return undefined;
+    const medir = () => {
+      const titulo = raiz.querySelector('[data-compra-titulo]');
+      const contenido = raiz.querySelector('[data-compra-contenido]');
+      const lista = raiz.querySelector('[data-lista-compra]');
+      if (!titulo || !contenido || !lista) return;
+      const arriba = Math.min(Math.max(raiz.getBoundingClientRect().top, 0), 160); // pestañas de la app
+      const resto = titulo.offsetHeight + 8 + (contenido.offsetHeight - lista.offsetHeight) + 12 + arriba + 28; // + "© MotoFlow"
+      const valor = `${Math.round(resto)}px`;
+      if (raiz.style.getPropertyValue('--compra-resto') !== valor) raiz.style.setProperty('--compra-resto', valor);
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    const contenido = raiz.querySelector('[data-compra-contenido]');
+    if (contenido) ro.observe(contenido);
+    window.addEventListener('resize', medir);
+    return () => { ro.disconnect(); window.removeEventListener('resize', medir); };
+  }, []);
   const { user, empresa } = useAuth();
   // (19/11/2026) Plan FREE: compras solo de contado (el servidor lo frena igual).
   const { esFree } = useSuscripcion();
@@ -2107,7 +2131,7 @@ const ComprasPage = () => {
   }, [handleKeyDown]);
 
   return (
-    <div className="bg-gray-100 min-h-screen pb-8">
+    <div ref={raizCompraRef} className="bg-gray-100 min-h-screen pb-3">
       <Helmet>
         <title>Compra de Mercancía - MotoFlow</title>
       </Helmet>
@@ -2133,8 +2157,8 @@ const ComprasPage = () => {
       />
 
       {/* Blue Header Bar */}
-      <div className="bg-morla-blue shadow-md mb-2 border-b-2 border-morla-blue/20">
-        <div className="container mx-auto px-4 h-11 flex items-center justify-between">
+      <div data-compra-titulo className="bg-morla-blue shadow-md mb-2 border-b-2 border-morla-blue/20">
+        <div className="max-w-[1900px] mx-auto px-3 h-10 flex items-center justify-between">
           <div className="w-32"></div>
           <h1 className="text-white font-black tracking-[0.25em] italic uppercase text-lg drop-shadow-sm">
             {isEditMode ? 'EDITAR COMPRA DE MERCANCIA' : 'COMPRA DE MERCANCIA'}
@@ -2170,10 +2194,11 @@ const ComprasPage = () => {
         </div>
       </div>
 
-      <div className="container mx-auto px-4">
+      {/* (21/11/2026) Más ancho y menos relleno: el espacio va a los artículos. */}
+      <div data-compra-contenido className="max-w-[1900px] mx-auto px-3">
         {/* Main Content Area */}
-        <div className="bg-white shadow-2xl border rounded-lg overflow-hidden flex flex-col min-h-[85vh]">
-          <div className="flex-1 p-4 lg:p-6 space-y-2">
+        <div className="bg-white shadow-xl border rounded-lg overflow-hidden flex flex-col">
+          <div className="flex-1 p-3 space-y-2">
             <CompraHeader
               compra={compra}
               setCompra={setCompra}
@@ -2231,32 +2256,33 @@ const ComprasPage = () => {
               financiamiento={financiamiento}
               setFinanciamiento={setFinanciamiento}
               esUSD={esUSD}
+              acciones={(
+                // (21/11/2026) Los botones van junto al total (antes, una franja aparte).
+                <>
+                  <Button
+                    variant="outline"
+                    className="flex-1 px-2 bg-white border-gray-300 shadow-sm hover:bg-gray-100 flex items-center justify-center gap-2 group h-10 border-b-[3px]"
+                    onClick={() => navigate(-1)}
+                    disabled={isSaving}
+                  >
+                    <div className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px] font-black">ESC</div>
+                    <span className="font-black uppercase text-xs text-gray-700 tracking-wider">Retornar</span>
+                  </Button>
+                  <Button
+                    className="flex-[1.6] px-2 bg-white border-2 border-morla-blue text-morla-blue hover:bg-morla-blue hover:text-white shadow-lg flex items-center justify-center gap-2 group h-10 border-b-[4px]"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    data-guia="compra-grabar"
+                  >
+                    <div className="bg-morla-blue text-white px-1.5 py-0.5 rounded text-[10px] font-black group-hover:bg-white group-hover:text-morla-blue transition-colors">F10</div>
+                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    <span className="font-black uppercase text-xs tracking-wider">Grabar</span>
+                  </Button>
+                </>
+              )}
             />
           </div>
 
-          {/* Action Buttons Footer */}
-          <div className="bg-gray-50 p-4 border-t flex justify-end items-center gap-5">
-            <Button
-              variant="outline"
-              className="px-6 py-5 bg-white border-gray-300 shadow-sm hover:bg-gray-100 flex items-center gap-3 group transition-all h-11 border-b-[3px]"
-              onClick={() => navigate(-1)}
-              disabled={isSaving}
-            >
-              <div className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px] font-black group-hover:bg-gray-300 transition-colors">ESC</div>
-              <span className="font-black uppercase text-xs text-gray-700 tracking-wider">Retornar</span>
-            </Button>
-
-            <Button
-              className="px-8 py-5 bg-white border-2 border-morla-blue text-morla-blue hover:bg-morla-blue hover:text-white shadow-lg flex items-center gap-3 group transition-all h-11 border-b-[4px]"
-              onClick={handleSave}
-              disabled={isSaving}
-              data-guia="compra-grabar"
-            >
-              <div className="bg-morla-blue text-white px-1.5 py-0.5 rounded text-[10px] font-black group-hover:bg-white group-hover:text-morla-blue transition-colors">F10</div>
-              {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-              <span className="font-black uppercase text-xs tracking-widest">Grabar Compra</span>
-            </Button>
-          </div>
         </div>
       </div>
     </div>

@@ -21,6 +21,7 @@ const CompraFooter = ({
   financiamiento = { activo: false, num_cuotas: 6, frecuencia: 'mensual', fecha_primera: '', cuotas: [] },
   setFinanciamiento = () => {},
   esUSD = false,
+  acciones = null,
 }) => {
   const [activeTab, setActiveTab] = useState('pago');
 
@@ -126,8 +127,10 @@ const CompraFooter = ({
   const totalPagado = useMemo(() => pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0), [pagos]);
   const pendiente = useMemo(() => Math.max(0, totals.total - totalPagado), [totals.total, totalPagado]);
 
+  // (21/11/2026) Pie compacto en tres columnas (pago · opciones · totales):
+  // antes ocupaba casi media pantalla y le quitaba espacio a los artículos.
   return (
-    <div className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_230px_310px] xl:grid-cols-[1fr_260px_330px] gap-3">
       {/* Left Column: Tabs Content */}
       <div className="border rounded shadow-sm bg-white overflow-hidden flex flex-col">
         {/* Tab Headers */}
@@ -141,7 +144,7 @@ const CompraFooter = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-1.5 text-[11px] font-bold uppercase transition-colors shrink-0 ${activeTab === tab.id
+              className={`px-3 py-1 text-[11px] font-bold uppercase transition-colors shrink-0 ${activeTab === tab.id
                 ? 'bg-white text-morla-blue border-r border-l first:border-l-0 border-t-2 border-t-morla-blue'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
                 }`}
@@ -152,7 +155,7 @@ const CompraFooter = ({
         </div>
 
         {/* Tab Content Area */}
-        <div className="p-4 flex-1 min-h-[160px]">
+        <div className="p-3 flex-1 min-h-[112px]">
           <AnimatePresence mode="wait">
             {activeTab === 'pago' && (
               <motion.div
@@ -160,9 +163,9 @@ const CompraFooter = ({
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
-                className="space-y-4"
+                className="space-y-2"
               >
-                <div className="flex items-center gap-6">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
                   <RadioGroup data-guia="compra-pago" value={compra.forma_pago} onValueChange={v => { setCompra({ ...compra, forma_pago: v }); if (v !== 'Credito') setFinanciamiento(f => ({ ...f, activo: false })); }} className="flex space-x-6">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="Contado" id="contado" className="h-4 w-4" />
@@ -198,8 +201,7 @@ const CompraFooter = ({
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-[11px] font-bold text-gray-700 block uppercase">Monto Pagado</Label>
+                <div className="space-y-1.5">
                   {pagos.map((pago, index) => (
                     <div key={pago.id} className="flex gap-2 items-center">
                       <Select value={pago.tipo} onValueChange={v => handlePaymentChange(pago.id, 'tipo', v)}>
@@ -239,33 +241,11 @@ const CompraFooter = ({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t">
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase">Total Pagado :</span>
-                      <span className="text-sm font-bold text-morla-blue font-mono">{fmt(totalPagado)}</span>
-                    </div>
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase">Pendiente :</span>
-                      <span className="text-sm font-bold text-red-500 font-mono">{fmt(pendiente)}</span>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex gap-2">
-                      <Select defaultValue="0">
-                        <SelectTrigger className="h-7 text-[10px] bg-gray-50 uppercase font-bold"><SelectValue placeholder="Elja ITBIS Retenid" /></SelectTrigger>
-                        <SelectContent><SelectItem value="0">0.00</SelectItem></SelectContent>
-                      </Select>
-                      <span className="text-xs font-mono py-1">0.00</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Select defaultValue="0">
-                        <SelectTrigger className="h-7 text-[10px] bg-gray-50 uppercase font-bold"><SelectValue placeholder="Elja ISR Retenido" /></SelectTrigger>
-                        <SelectContent><SelectItem value="0">0.00</SelectItem></SelectContent>
-                      </Select>
-                      <span className="text-xs font-mono py-1">0.00</span>
-                    </div>
-                  </div>
+                {/* Las dos listas de "ITBIS / ISR retenido" que había aquí eran de adorno
+                    (solo 0.00 y no se guardaban): la retención de ISR va en el encabezado. */}
+                <div className="flex items-center justify-end gap-6 pt-1.5 border-t text-[11px]">
+                  <span className="font-bold text-gray-500 uppercase">Pagado <span className="ml-1 text-sm text-morla-blue font-mono">{fmt(totalPagado)}</span></span>
+                  <span className="font-bold text-gray-500 uppercase">Pendiente <span className="ml-1 text-sm text-red-500 font-mono">{fmt(pendiente)}</span></span>
                 </div>
               </motion.div>
             )}
@@ -279,7 +259,7 @@ const CompraFooter = ({
               >
                 <Label className="text-[11px] font-bold text-gray-400 uppercase mb-2 block">Notas Internas o Comentarios</Label>
                 <textarea
-                  className="w-full h-32 p-3 text-xs border rounded-md bg-gray-50/50 focus:outline-none focus:ring-1 focus:ring-morla-blue/30 resize-none font-sans"
+                  className="w-full h-20 p-2 text-xs border rounded-md bg-gray-50/50 focus:outline-none focus:ring-1 focus:ring-morla-blue/30 resize-none font-sans"
                   placeholder="Escriba aquí cualquier observación relevante..."
                   value={compra.notas || ''}
                   onChange={e => setCompra({ ...compra, notas: e.target.value })}
@@ -435,101 +415,74 @@ const CompraFooter = ({
         </div>
       </div>
 
-      {/* Right Column: Totals */}
-      <div className="border rounded shadow-sm bg-gray-50/50 p-4 space-y-3">
-        <div className="space-y-1.5">
-          <div className="flex justify-between items-center text-xs text-gray-600">
-            <span className="uppercase font-bold">Total Exento</span>
-            <span className="font-mono font-bold tracking-tight">{fmt(totals.exento)}</span>
-          </div>
-          <div className="flex justify-between items-center text-xs text-gray-600">
-            <span className="uppercase font-bold">Total Gravado</span>
-            <span className="font-mono font-bold tracking-tight">{fmt(totals.gravado)}</span>
-          </div>
-          <div className="flex justify-between items-center text-xs text-gray-600">
-            <span className="uppercase font-bold">Descuento</span>
-            <span className="font-mono font-bold tracking-tight text-red-500">{fmt(totals.descuento)}</span>
-          </div>
-          <div className="flex justify-between items-center text-xs text-gray-600">
-            <span className="uppercase font-bold">ITBIS</span>
-            <span className="font-mono font-bold tracking-tight">{fmt(totals.itbis)}</span>
-          </div>
+      {/* Opciones: ITBIS incluido, actualizar precios e impresión */}
+      <div className="border rounded shadow-sm bg-white p-3 space-y-2">
+        <label htmlFor="itbis-incluido" className="flex items-center gap-2 cursor-pointer">
+          <Checkbox
+            id="itbis-incluido"
+            checked={compra.itbis_incluido}
+            onCheckedChange={c => setCompra({ ...compra, itbis_incluido: c })}
+            className="h-4 w-4 border-2 border-gray-300 data-[state=checked]:bg-morla-blue data-[state=checked]:border-morla-blue"
+          />
+          <span className="text-[11px] font-black text-gray-700 uppercase">ITBIS incluido</span>
+        </label>
+        <label htmlFor="actualizar-precios" className="flex items-center gap-2 cursor-pointer">
+          <Checkbox
+            id="actualizar-precios"
+            checked={compra.actualizar_precios}
+            onCheckedChange={c => setCompra({ ...compra, actualizar_precios: c })}
+            className="h-4 w-4 border-2 border-gray-300 data-[state=checked]:bg-morla-blue data-[state=checked]:border-morla-blue"
+          />
+          <span className="text-[11px] font-black text-gray-700 uppercase">Actualizar precios</span>
+        </label>
+        {/* Un solo control. Antes eran dos (método + tamaño) y la hoja carta
+            quedaba escondida detrás de "PDF", así que parecía que no existía. */}
+        <div className="pt-2 border-t">
+          <Label className="text-[10px] font-bold text-gray-500 uppercase mb-0.5 block" title="Se recuerda en esta PC. El valor por defecto se pone en Configuración del Sistema.">Impresión</Label>
+          <Select value={printFormat} onValueChange={setPrintFormat}>
+            <SelectTrigger className="h-8 text-xs font-bold bg-white [&_span]:truncate [&_span]:whitespace-nowrap">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pdf">📄 Hoja Carta (8.5 x 11)</SelectItem>
+              <SelectItem value="pos_4inch">📑 Ticket 101.6mm (4 pulgadas)</SelectItem>
+              <SelectItem value="pos_80mm">📑 Ticket 80mm (3 pulgadas)</SelectItem>
+            </SelectContent>
+          </Select>
+          {/* El agente imprime el ticket directo, sin el diálogo del navegador.
+              La hoja carta sale en PDF y no pasa por él. */}
+          {printFormat !== 'pdf' && (hayAgente ? (
+            <label className="mt-1.5 flex items-center gap-2 cursor-pointer" title="El ticket sale solo a la impresora térmica. Se recuerda en esta PC y aplica a todo el sistema.">
+              <Checkbox checked={sinDialogo} onCheckedChange={cambiarSinDialogo} />
+              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-700">
+                <Zap className="w-3.5 h-3.5" /> Sin diálogo (Print Agent)
+              </span>
+            </label>
+          ) : (
+            <p className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-gray-400" title="Sin el agente, el ticket abre el diálogo de impresión del navegador.">
+              <Zap className="w-3 h-3" /> Print Agent no detectado
+            </p>
+          ))}
         </div>
+      </div>
 
-        <div className="border-t border-gray-300 pt-3 mt-3" data-guia="compra-total">
-          <div className="flex justify-between items-end">
-            <span className="text-sm font-black text-red-600 uppercase tracking-tighter">TOTAL COMPRA</span>
+      {/* Totales */}
+      <div className="border rounded shadow-sm bg-gray-50 p-3 flex flex-col justify-between">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-600">
+          <div className="flex justify-between"><span className="uppercase font-bold">Exento</span><span className="font-mono font-bold">{fmt(totals.exento)}</span></div>
+          <div className="flex justify-between"><span className="uppercase font-bold">Gravado</span><span className="font-mono font-bold">{fmt(totals.gravado)}</span></div>
+          <div className="flex justify-between"><span className="uppercase font-bold">Descuento</span><span className="font-mono font-bold text-red-500">{fmt(totals.descuento)}</span></div>
+          <div className="flex justify-between"><span className="uppercase font-bold">ITBIS</span><span className="font-mono font-bold">{fmt(totals.itbis)}</span></div>
+        </div>
+        <div className="border-t border-gray-300 pt-2 mt-2" data-guia="compra-total">
+          <div className="flex justify-between items-end gap-2">
+            <span className="text-sm font-black text-red-600 uppercase tracking-tighter">Total compra</span>
             <span className="text-3xl font-black text-red-600 font-mono leading-none tracking-tighter">
               {totals.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-
-        {/* Un solo control. Antes eran dos (método + tamaño) y la hoja carta
-            quedaba escondida detrás de "PDF", así que parecía que no existía. */}
-        <div className="mt-3 pt-3 border-t space-y-2">
-          <div>
-            <Label className="text-[11px] font-bold text-gray-500 uppercase mb-1 block tracking-wider">Formato de Impresión</Label>
-            <Select value={printFormat} onValueChange={setPrintFormat}>
-              <SelectTrigger className="h-8 text-xs font-bold bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pdf">📄 Hoja Carta (8.5 x 11)</SelectItem>
-                <SelectItem value="pos_4inch">📑 Ticket 101.6mm (4 pulgadas)</SelectItem>
-                <SelectItem value="pos_80mm">📑 Ticket 80mm (3 pulgadas)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-gray-400 italic mt-1">
-              Se recuerda en esta PC. El valor por defecto se pone en Configuración del Sistema.
-            </p>
-          </div>
-
-          {/* El agente imprime el ticket directo, sin el diálogo del navegador.
-              La hoja carta sale en PDF y no pasa por él. */}
-          {printFormat !== 'pdf' && (
-            <div className={`rounded border px-2 py-1.5 ${hayAgente ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-              {hayAgente ? (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={sinDialogo} onCheckedChange={cambiarSinDialogo} />
-                  <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
-                    <Zap className="w-3.5 h-3.5" /> Imprimir sin diálogo (Print Agent)
-                  </span>
-                </label>
-              ) : (
-                <p className="flex items-center gap-1 text-[11px] font-semibold text-gray-400">
-                  <Zap className="w-3.5 h-3.5" /> Motoflow Print Agent — no detectado en esta PC
-                </p>
-              )}
-              <p className="text-[10px] text-gray-400 italic mt-0.5">
-                {hayAgente
-                  ? 'El ticket sale solo a la impresora térmica. Se recuerda en esta PC y aplica a todo el sistema.'
-                  : 'Sin el agente, el ticket abre el diálogo de impresión del navegador.'}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="pt-4 space-y-2 border-t mt-4 border-gray-200">
-          <div className="flex items-center space-x-3 cursor-pointer group bg-white p-2 rounded border border-gray-100 shadow-sm hover:border-morla-blue/30 transition-all">
-            <Checkbox
-              id="itbis-incluido"
-              checked={compra.itbis_incluido}
-              onCheckedChange={c => setCompra({ ...compra, itbis_incluido: c })}
-              className="h-5 w-5 border-2 border-gray-300 data-[state=checked]:bg-morla-blue data-[state=checked]:border-morla-blue transition-all"
-            />
-            <Label htmlFor="itbis-incluido" className="text-[11px] font-black text-gray-700 uppercase cursor-pointer group-hover:text-morla-blue transition-colors">ITBIS incluido?</Label>
-          </div>
-          <div className="flex items-center space-x-3 cursor-pointer group bg-white p-2 rounded border border-gray-100 shadow-sm hover:border-morla-blue/30 transition-all">
-            <Checkbox
-              id="actualizar-precios"
-              checked={compra.actualizar_precios}
-              onCheckedChange={c => setCompra({ ...compra, actualizar_precios: c })}
-              className="h-5 w-5 border-2 border-gray-300 data-[state=checked]:bg-morla-blue data-[state=checked]:border-morla-blue transition-all"
-            />
-            <Label htmlFor="actualizar-precios" className="text-[11px] font-black text-gray-700 uppercase cursor-pointer group-hover:text-morla-blue transition-colors">Actualizar precios?</Label>
-          </div>
-        </div>
+        {acciones && <div className="flex gap-2 mt-2">{acciones}</div>}
       </div>
     </div>
   );

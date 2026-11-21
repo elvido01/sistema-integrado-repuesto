@@ -1,4 +1,5 @@
 import './index.css';
+import './styles/modo-oscuro.css'; // (21/11/2026) modo oscuro para todas las pantallas
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
