@@ -50,7 +50,8 @@
 --    las necesite sin sesión debe darlas explícito: GRANT SELECT ... TO anon).
 --
 -- Respaldo de permisos en seguridad_acl_respaldo (fase 'fase3').
--- Reversa: sql/seguridad_fase3_anon_revertir.sql.
+-- Reversa: reversas/seguridad_fase3_anon_revertir.sql (fuera de sql/: el 22/11
+-- se aplicó sin querer junto con esta y reabrió la fuga).
 -- =====================================================================
 BEGIN;
 

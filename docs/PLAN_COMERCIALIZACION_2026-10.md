@@ -16,7 +16,7 @@ Marcar con [x] al terminar.
 - Riesgo: bajo (solo permisos; la app no usa esas vías sin sesión).
 - Verificar: la prueba sin sesión debe dar "permission denied"; el domingo,
   una venta, una compra y un recibo de prueba.
-- Deshacer: `sql/seguridad_fase1_revertir.sql`.
+- Deshacer: `reversas/seguridad_fase1_revertir.sql`.
 
 ### Dom 11/10 (ventana larga) — Red de seguridad para lo que sigue
 - [x] (10/10, web publicada; falta correr `sql/errores_app.sql`) Registro de errores propio: los errores de la web y de las funciones

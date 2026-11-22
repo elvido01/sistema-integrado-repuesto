@@ -32,7 +32,7 @@
 --    (las dos inserciones de la web son para el propio usuario).
 --
 -- Respaldo de permisos en seguridad_acl_respaldo. Reversa:
--- sql/seguridad_fase2_revertir.sql. Todo en una transacción.
+-- reversas/seguridad_fase2_revertir.sql. Todo en una transacción.
 -- =====================================================================
 
 BEGIN;
