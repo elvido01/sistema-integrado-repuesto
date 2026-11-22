@@ -18,6 +18,9 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import { getCurrentDateInTimeZone, formatDateForSupabase } from '@/lib/dateUtils';
 
+// Valor especial del selector de ubicación: la lista de piezas por contar.
+const POR_CONTAR = '__por_contar__';
+
 const InventarioFisicoPage = () => {
   const { empresa } = useAuth();
     const { toast } = useToast();
@@ -28,6 +31,15 @@ const InventarioFisicoPage = () => {
     const [selectedUbicacion, setSelectedUbicacion] = useState('none');
     const [products, setProducts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    // Cuántas piezas de esta empresa están marcadas "por contar". La opción
+    // del selector solo sale si hay alguna (hoy: Morla y su hermana).
+    const [hayPorContar, setHayPorContar] = useState(0);
+    useEffect(() => {
+        let vivo = true;
+        supabase.rpc('get_inventario_por_contar', { p_search: '' })
+            .then(({ data, error }) => { if (vivo && !error) setHayPorContar((data || []).length); });
+        return () => { vivo = false; };
+    }, [products]);
     // Casi todo el catálogo está en cero: de 1000 artículos consultados,
     // la existencia total son 18 unidades. Para contar físicamente solo
     // estorban, así que se pueden esconder.
@@ -73,6 +85,16 @@ const InventarioFisicoPage = () => {
             // en 1,000 filas y el catálogo tiene 3,535, así que sin filtrar
             // allá la consulta solo veía el primer pedazo — por eso contaba
             // 20 motos cuando hay 117 productos con existencia.
+            // ★ POR CONTAR: piezas que vinieron de Morla Vieja (o que Morla tenía
+            // en 0 y la vieja no) y hay que contar en la gaveta. Ver
+            // sql/morla_vieja_hermana_un_inventario.sql.
+            if (selectedUbicacion === POR_CONTAR) {
+                const { data: pc, error: ePc } = await supabase.rpc('get_inventario_por_contar', { p_search: searchTerm || '' });
+                if (ePc) throw ePc;
+                setProducts(pc || []);
+                return;
+            }
+
             let { data, error } = await supabase.rpc('get_inventario_fisico_filtrado', {
                 p_ubicacion: selectedUbicacion,
                 p_search: searchTerm,
@@ -201,6 +223,8 @@ const InventarioFisicoPage = () => {
                 const currentExistencia = editingProduct?.existencia || 0;
                 const newExistencia = existencia || 0;
                 const diff = parseFloat(newExistencia) - parseFloat(currentExistencia);
+                // Solo si el conteo quedó bien grabado se le quita "por contar".
+                let conteoGrabado = Math.abs(diff) <= 0.001;
 
                 if (Math.abs(diff) > 0.001) {
                     const almacenId = almacenes[0]?.id;
@@ -250,6 +274,7 @@ const InventarioFisicoPage = () => {
                             console.error('Error creating auto entrada:', entError);
                             toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de entrada.' });
                         } else {
+                            conteoGrabado = true;
                             toast({ title: 'Ajuste automático', description: `Se autogeneró una Entrada de Mercancía (${numData}) por +${diff} uds.` });
                         }
                     } else {
@@ -284,11 +309,21 @@ const InventarioFisicoPage = () => {
                             console.error('Error creating auto salida:', salError);
                             toast({ variant: 'destructive', title: 'Advertencia', description: 'Se guardó la mercancía pero falló el ajuste automático de salida.' });
                         } else {
+                            conteoGrabado = true;
                             toast({ title: 'Ajuste automático', description: `Se autogeneró una Salida de Mercancía (${numData}) por -${absDiff} uds.` });
                         }
                     }
                 } else {
                     toast({ title: 'Producto actualizado', description: 'Los cambios se guardaron correctamente.' });
+                }
+
+                // Contada en la gaveta (desde la lista "Por contar" o desde su
+                // ubicación): deja de estar por contar, aunque la cantidad no
+                // cambie. El espejo se lo quita también a la empresa hermana.
+                if (conteoGrabado && savedProduct.por_contar) {
+                    const { error: pcError } = await supabase.from('productos')
+                        .update({ por_contar: false }).eq('id', savedProduct.id).select('id');
+                    if (pcError) console.error('No se pudo quitar "por contar":', pcError);
                 }
             }
 
@@ -323,14 +358,15 @@ const InventarioFisicoPage = () => {
             'Descripción': p.descripcion,
             'Referencia': p.referencia,
             'Ubicación': p.ubicacion,
-            'Existencia': p.existencia
+            'Existencia': p.existencia,
+            ...(selectedUbicacion === POR_CONTAR ? { 'Sistema viejo (28/05)': p.por_contar_ref ?? '', 'Contado': '' } : {}),
         }));
 
         // El nombre del archivo dice si viene filtrado: si no, dos Excel del
         // mismo día con distinto contenido son indistinguibles.
         exportToExcel(
             dataToExport,
-            `Inventario_Fisico_${selectedUbicacion}${soloConExistencia ? '_con_existencia' : ''}`
+            `Inventario_Fisico_${selectedUbicacion === POR_CONTAR ? "POR_CONTAR" : selectedUbicacion}${soloConExistencia ? '_con_existencia' : ''}`
         );
     };
 
@@ -345,7 +381,7 @@ const InventarioFisicoPage = () => {
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Inventario Físico - ${selectedUbicacion}</title>
+        <title>Inventario Físico - ${selectedUbicacion === POR_CONTAR ? "POR CONTAR" : selectedUbicacion}</title>
         <style>
           body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; }
           .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
@@ -366,7 +402,7 @@ const InventarioFisicoPage = () => {
           <p>Inventario Físico por Ubicación</p>
         </div>
         <div class="info">
-          Ubicación: ${selectedUbicacion === 'all' ? 'TODAS' : selectedUbicacion}<br/>
+          Ubicación: ${selectedUbicacion === 'all' ? 'TODAS' : selectedUbicacion === POR_CONTAR ? 'POR CONTAR' : selectedUbicacion}<br/>
           Fecha: ${new Date().toLocaleDateString('es-DO')}<br/>
           Artículos: ${filteredProducts.length}${
             // Que la hoja diga que viene filtrada: si no, un conteo parcial
@@ -383,6 +419,7 @@ const InventarioFisicoPage = () => {
               <th>REFERENCIA</th>
               <th>UBICACIÓN</th>
               <th class="text-right">EXISTENCIA</th>
+              ${selectedUbicacion === POR_CONTAR ? '<th class="text-right">SIST. VIEJO</th><th>CONTADO</th>' : ''}
             </tr>
           </thead>
           <tbody>
@@ -391,8 +428,9 @@ const InventarioFisicoPage = () => {
                 <td>${p.codigo}</td>
                 <td>${p.descripcion}</td>
                 <td>${p.referencia || 'N/A'}</td>
-                <td>${p.ubicacion}</td>
+                <td>${p.ubicacion || ''}</td>
                 <td class="text-right">${p.existencia}</td>
+                ${selectedUbicacion === POR_CONTAR ? `<td class="text-right">${p.por_contar_ref ?? ''}</td><td style="min-width:70px"></td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -441,6 +479,7 @@ const InventarioFisicoPage = () => {
                                 options={[
                                     { value: 'none', label: '--- SELECCIONE UBICACIÓN ---' },
                                     { value: 'all', label: '--- TODAS LAS UBICACIONES ---' },
+                                    ...(hayPorContar ? [{ value: POR_CONTAR, label: `★ POR CONTAR (${hayPorContar} piezas marcadas)` }] : []),
                                     ...ubicaciones.map(a => ({ value: a.nombre, label: a.nombre }))
                                 ]}
                                 value={selectedUbicacion}
@@ -538,7 +577,12 @@ const InventarioFisicoPage = () => {
                                             <TableCell className="uppercase text-xs">{p.descripcion}</TableCell>
                                             <TableCell className="text-xs text-slate-500">{p.referencia || '---'}</TableCell>
                                             <TableCell className="text-xs font-medium text-blue-700">{p.ubicacion}</TableCell>
-                                            <TableCell className="text-right font-bold text-sm text-green-700">{p.existencia}</TableCell>
+                                            <TableCell className="text-right font-bold text-sm text-green-700">
+                                                {p.existencia}
+                                                {p.por_contar_ref != null && (
+                                                    <span className="block text-[10px] font-normal text-amber-700" title="Lo que decía el sistema viejo el 28/05/2026">vieja: {Number(p.por_contar_ref)}</span>
+                                                )}
+                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}

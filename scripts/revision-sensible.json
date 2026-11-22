@@ -363,7 +363,7 @@
     "src/pages/FinancieraPrestamosPage.jsx": "0e4cf34d66c07885",
     "src/pages/FlujoCajaPage.jsx": "780178bdfa02b360",
     "src/pages/GestionCobroPage.jsx": "ab20e6df03486db2",
-    "src/pages/InventarioFisicoPage.jsx": "b8944320ac3f0956",
+    "src/pages/InventarioFisicoPage.jsx": "8f7342074bedea20",
     "src/pages/InventarioInteligentePage.jsx": "b539fed6a2087c39",
     "src/pages/ListaChasisPrestamosPage.jsx": "b1b70541508a15c1",
     "src/pages/NominaPage.jsx": "6be48f0f62f10ad9",
@@ -465,16 +465,11 @@
     "sql/documentacion_registro_dgii.sql": "9c0aaf68bd93130e",
     "sql/prestamo_descripcion.sql": "3a1c99e39a4801f7",
     "src/components/financiera/EditarDescripcionPrestamo.jsx": "0d8f8a02b1c5f176",
-    "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3"
+    "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3",
+    "sql/inventario_por_contar.sql": "abfabed153aaa7b8",
+    "sql/morla_vieja_hermana_un_inventario.sql": "d3834b775c577951"
   },
   "historial": [
-    {
-      "fecha": "2026-11-09",
-      "nota": "code-review high (tanda tickets 437 / plan / cotizacion pies): 10 hallazgos; arreglados 9 (QZ manda bytes en base64, WebUSB byte a byte + ajuste Star, linea por pies aparte al reabrir y desde cotizacion/pedido con idsDeLinea, primera linea PIES tambien aparte, trigger tambien al borrar, sin respaldo que cambiaba solo la etiqueta del plan, regex sin caracteres invisibles, fraccion que redondea a 0 avisa); aceptado: consulta extra al escoger color",
-      "archivos": [
-        "src/hooks/useVentas.js"
-      ]
-    },
     {
       "fecha": "2026-11-09",
       "nota": "code-review high (MontoInput en ventas/recibo/gastos/compromisos): 8 hallazgos; arreglados 5 (decimal se perdia si la pantalla guarda numero -> crudoAMostrar, ref como callback, type/inputMode no se pueden sobreescribir, cero a la izquierda); 3 de estilo sin efecto",
@@ -1021,6 +1016,15 @@
       "archivos": [
         "src/components/ventas/VentasTable.jsx",
         "src/hooks/useVentas.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-22",
+      "nota": "code-review high: unificacion Morla/Morla Vieja (hermanas, inventario compartido, por contar, codigos anteriores) + Inventario Fisico por contar; corregidos: marca recuperada del respaldo, halladas por descripcion a por contar, inactivas desmarcadas, por contar se quita solo si el conteo grabo y desde cualquier vista, lista con get_stock_actual y sin tildes, opcion solo si hay marcadas. Duplicados por codigo descartado (indice unico y 0 repetidos)",
+      "archivos": [
+        "sql/inventario_por_contar.sql",
+        "sql/morla_vieja_hermana_un_inventario.sql",
+        "src/pages/InventarioFisicoPage.jsx"
       ]
     }
   ]
