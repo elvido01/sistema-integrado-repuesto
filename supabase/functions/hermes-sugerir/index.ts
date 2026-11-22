@@ -16,6 +16,12 @@
 // Hermes sin tocar este archivo — que era justo el punto de hacer el MCP.
 //
 // Body: { conversation_id }
+//
+// (22/11/2026) MODO SOMBRA: { conversation_id, hasta_message_id, sombra: true }
+// Lo llama hermes-sombra con la sesión del usuario "Hermes" de la empresa,
+// para CADA pregunta que entra por el espejo. Redacta viendo la conversación
+// solo hasta esa pregunta (nunca lo que contestó la tienda) y lo guarda
+// aparte (metadata.sombra), sin tocar la propuesta del botón ni su medida.
 // ============================================================
 
 // @ts-nocheck
@@ -47,6 +53,9 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return json({ ok: false, error: 'json_invalido' }, 400); }
   const conversationId = String(body?.conversation_id || '').trim();
   if (!conversationId) return json({ ok: false, error: 'conversation_id_requerido' }, 400);
+  const sombra = body?.sombra === true;
+  const hastaMessageId = String(body?.hasta_message_id || '').trim() || null;
+  if (sombra && !hastaMessageId) return json({ ok: false, error: 'hasta_message_id_requerido' }, 400);
 
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) return json({ ok: false, error: 'Falta OPENAI_API_KEY' }, 500);
@@ -64,6 +73,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: ctx, error } = await supabase.rpc('hermes_contexto_sugerencia', {
       p_conversation_id: conversationId,
+      ...(hastaMessageId ? { p_hasta_message: hastaMessageId } : {}),
     });
     if (error) return json({ ok: false, error: error.message }, 400);
     if (!ctx?.ok) return json({ ok: false, error: ctx?.motivo || 'Sin contexto' }, 400);
@@ -81,17 +91,33 @@ Deno.serve(async (req: Request) => {
     // (23/10/2026) Lo que el dueño CAMBIÓ de las sugerencias: el mejor
     // maestro que hay. Antes → después, las 8 más recientes.
     const { data: corr } = await supabase.from('sales_ai_training_logs')
-      .select('customer_message, bot_reply, human_reply')
+      .select('conversation_id, customer_message, bot_reply, human_reply, created_at')
       .eq('outcome', 'editada').not('human_reply', 'is', null)
       .order('created_at', { ascending: false }).limit(12);
-    ctx.correcciones = (corr || [])
+    // (22/11/2026) Y las de la SOMBRA donde el juez dijo que la tienda
+    // contestó mejor: lo que Hermes habría dicho → lo que se dijo de verdad.
+    const { data: corrSombra } = await supabase.from('sales_ai_training_logs')
+      .select('conversation_id, customer_message, bot_reply:metadata->sombra->>texto, human_reply, created_at')
+      .eq('metadata->evaluacion->>quien_mejor', 'humano').not('human_reply', 'is', null)
+      .order('created_at', { ascending: false }).limit(12);
+    ctx.correcciones = [...(corr || []), ...(corrSombra || [])]
+      // En sombra, nunca la conversación que se está contestando: sería ver la respuesta.
+      .filter((c: any) => !sombra || c.conversation_id !== conversationId)
       .filter((c: any) => c.human_reply && c.bot_reply && c.human_reply.trim() !== c.bot_reply.trim()
         && c.human_reply.length > 8 && !/solicitud de env[ií]o de mensajes/i.test(c.human_reply))
-      .slice(0, 8);
+      .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+      .slice(0, 8)
+      .map(({ customer_message, bot_reply, human_reply }: any) => ({ customer_message, bot_reply, human_reply }));
 
     const { texto, usadas } = await redactar(ctx, apiKey, mcpUrl, token);
     if (!texto) return json({ ok: false, error: 'La IA no devolvio texto' }, 502);
     if (/^\s*NO_RESPONDER\s*$/i.test(texto)) {
+      if (sombra) {
+        await supabase.rpc('hermes_guardar_sombra', {
+          p_message_id: ctx.message_id, p_texto: null, p_datos: { no_responder: true, modelo: MODELO },
+        });
+        return json({ ok: true, sombra: true, no_responder: true });
+      }
       return json({ ok: false, no_responder: true, error: 'Ese mensaje no parece de un cliente (cadena, enlace o publicidad): no hace falta contestarlo.' }, 200);
     }
 
@@ -103,6 +129,17 @@ Deno.serve(async (req: Request) => {
     const promo = promoDeLaPregunta({
       promos: ctx.promociones, texto: loQueDijo, piezas: usadas.flatMap((u: any) => u.piezas || []),
     });
+
+    if (sombra) {
+      const piezas = usadas.flatMap((u: any) => u.piezas || []).slice(0, 8);
+      const { data: g, error: eg } = await supabase.rpc('hermes_guardar_sombra', {
+        p_message_id: ctx.message_id, p_texto: texto,
+        p_datos: { modelo: MODELO, herramientas: usadas.map((u: any) => u.herramienta).filter(Boolean),
+                   piezas, fotos_vistas: (ctx.fotos || []).length, hubo_foto: !!ctx.hubo_foto },
+      });
+      if (eg || !g?.guardado) return json({ ok: false, error: eg?.message || 'No se guardó la sombra' }, 500);
+      return json({ ok: true, sombra: true, message_id: ctx.message_id });
+    }
 
     await supabase.rpc('hermes_guardar_sugerencia', {
       p_message_id: ctx.message_id,
