@@ -63,13 +63,17 @@ Deno.serve(async (req: Request) => {
     } catch (e) {
       const msg = String(e?.message || e).slice(0, 300);
       out.errores.push(msg);
+      // (22/11/2026) Sin crédito en OpenAI no es culpa de la pregunta: no se
+      // gasta su intento y se para la vuelta. Al recargar, se retoma lo que
+      // haya entrado en las últimas 6 h.
+      if (/no credits|insufficient_quota|OpenAI 429|rate limit/i.test(msg)) { out.ok = false; break; }
       await admin.rpc('hermes_sombra_marcar_error', { p_message_id: p.message_id, p_error: msg });
     }
   }
 
   // 2) JUZGAR --------------------------------------------------------------
   const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (apiKey && Date.now() - t0 < TOPE_MS / 2) {
+  if (apiKey && out.ok && Date.now() - t0 < TOPE_MS / 2) {
     const { data: porJuzgar } = await admin.rpc('hermes_sombra_por_evaluar', { p_limite: 8 });
     for (const x of porJuzgar || []) {
       if (Date.now() - t0 > TOPE_MS) break;
