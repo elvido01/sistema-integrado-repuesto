@@ -56,7 +56,7 @@ async function resolveEmisorConfig(supabase, tenantId, integConfig) {
   const needsFallback =
     !cfg.direccion || !cfg.email || !cfg.telefono ||
     !cfg.rnc_emisor || !cfg.nombre_emisor;
-  if (!needsFallback) return cfg;
+  if (!needsFallback) return await razonSocialDelRegistro(supabase, cfg);
 
   try {
     const { data: empresa } = await supabase
@@ -64,16 +64,56 @@ async function resolveEmisorConfig(supabase, tenantId, integConfig) {
       .select("rnc, nombre, direccion1, email, telefono")
       .eq("tenant_id", tenantId)
       .maybeSingle();
-    if (!empresa) return cfg;
-
-    if (!cfg.rnc_emisor && empresa.rnc) cfg.rnc_emisor = empresa.rnc;
-    if (!cfg.nombre_emisor && empresa.nombre) cfg.nombre_emisor = empresa.nombre;
-    if (!cfg.direccion && empresa.direccion1) cfg.direccion = empresa.direccion1;
-    if (!cfg.telefono && empresa.telefono) cfg.telefono = empresa.telefono;
-    if (!cfg.email && empresa.email) cfg.email = empresa.email;
-    if (!cfg.nombre_comercial && empresa.nombre) cfg.nombre_comercial = empresa.nombre;
+    if (empresa) {
+      if (!cfg.rnc_emisor && empresa.rnc) cfg.rnc_emisor = empresa.rnc;
+      if (!cfg.nombre_emisor && empresa.nombre) cfg.nombre_emisor = empresa.nombre;
+      if (!cfg.direccion && empresa.direccion1) cfg.direccion = empresa.direccion1;
+      if (!cfg.telefono && empresa.telefono) cfg.telefono = empresa.telefono;
+      if (!cfg.email && empresa.email) cfg.email = empresa.email;
+      // Borrado a propósito en el formulario: no se rellena con el de la empresa.
+      if (!cfg.nombre_comercial && !cfg.nombre_comercial_borrado && empresa.nombre) cfg.nombre_comercial = empresa.nombre;
+    }
   } catch (err) {
     console.warn("[resolveEmisorConfig] fallback config_empresa fallo:", err.message);
+  }
+  return await razonSocialDelRegistro(supabase, cfg);
+}
+
+// (23/11/2026) La razón social del e-CF es la que la DGII tiene para el RNC
+// (Aponte: "La Razón Social debe corresponder al RNC"). El trigger
+// trg_dgii_emisor_razon_del_registro ya la pone al guardar la configuración;
+// esto cubre lo que no pasa por él: el RNC/nombre que vino de config_empresa
+// (que es el nombre del negocio). Misma regla: razon_social_manual gana; RNC
+// fuera del listado no se toca; el nombre previo pasa a nombre_comercial si
+// estaba vacío (y no se borró a propósito). Se mira el listado en cada emisión
+// (una búsqueda por llave): si la recarga semanal trae un nombre nuevo, sale
+// ese sin esperar a que alguien re-guarde la configuración.
+const normNombre = (s) => String(s || "").trim().toUpperCase().replace(/\s+/g, " ");
+async function razonSocialDelRegistro(supabase, cfg) {
+  const manual = String(cfg.razon_social_manual || "").trim();
+  if (manual) { cfg.nombre_emisor = manual; return cfg; }
+  const rnc = String(cfg.rnc_emisor || "").replace(/\D/g, "");
+  if (!rnc) return cfg;
+  try {
+    const { data, error } = await supabase
+      .from("dgii_contribuyentes")
+      .select("razon_social")
+      .eq("rnc", rnc)
+      .maybeSingle();
+    if (error) {
+      console.warn("[razonSocialDelRegistro] no se pudo leer el listado DGII:", error.message);
+      return cfg;
+    }
+    const razon = String(data?.razon_social || "").trim();
+    if (!razon) return cfg;
+    const previo = String(cfg.nombre_emisor || "").trim();
+    if (previo && normNombre(previo) !== normNombre(razon)
+        && !String(cfg.nombre_comercial || "").trim() && !cfg.nombre_comercial_borrado) {
+      cfg.nombre_comercial = previo;
+    }
+    cfg.nombre_emisor = razon;
+  } catch (err) {
+    console.warn("[razonSocialDelRegistro] no se pudo leer el listado DGII:", err.message);
   }
   return cfg;
 }
@@ -1582,7 +1622,12 @@ Deno.serve(async (req) => {
         ...(integ.config || {}),
         rnc_emisor: rnc_emisor || integ.config?.rnc_emisor || null,
         nombre_emisor: nombre_emisor || integ.config?.nombre_emisor || null,
-        nombre_comercial: nombre_comercial || integ.config?.nombre_comercial || null,
+        // (23/11/2026) Texto vacío a propósito = se borra (antes quedaba el
+        // viejo y la RI seguía con él) y se marca para que la emisión no lo
+        // rellene con el nombre de la empresa. null/ausente = se conserva.
+        ...(typeof nombre_comercial === "string"
+          ? { nombre_comercial: nombre_comercial.trim() || null, nombre_comercial_borrado: !nombre_comercial.trim() }
+          : { nombre_comercial: integ.config?.nombre_comercial || null }),
         municipio: municipio || integ.config?.municipio || null,
         provincia: provincia || integ.config?.provincia || null,
         ambiente: ambiente || integ.config?.ambiente || "TesteCF",
