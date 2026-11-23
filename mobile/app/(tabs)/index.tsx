@@ -447,7 +447,9 @@ function SellerDashboard({
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { tenantId, empresa, user, profile } = useAuthStore();
+  const { tenantId, empresa, user, profile, misEmpresas, cambiarEmpresa } = useAuthStore();
+  const [selectorEmpresa, setSelectorEmpresa] = useState(false);
+  const [cambiandoEmpresa, setCambiandoEmpresa] = useState<string | null>(null);
   const [data, setData] = useState<MobileDashboardData>(initialData);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -573,8 +575,64 @@ export default function DashboardScreen() {
     >
       <View className="mb-4">
         <Text className="text-gray-500 text-xs font-bold uppercase tracking-wider">Dashboard</Text>
-        <Text className="text-2xl font-black text-gray-950" numberOfLines={1}>{nombre}</Text>
+        {misEmpresas.length > 1 ? (
+          <TouchableOpacity onPress={() => setSelectorEmpresa(true)} className="flex-row items-center" activeOpacity={0.7}>
+            <Text className="text-2xl font-black text-gray-950 flex-shrink" numberOfLines={1}>{nombre}</Text>
+            <Feather name="chevron-down" size={22} color="#1d4ed8" style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+        ) : (
+          <Text className="text-2xl font-black text-gray-950" numberOfLines={1}>{nombre}</Text>
+        )}
       </View>
+
+      {profile?.is_superadmin && (
+        <TouchableOpacity
+          onPress={() => router.push('/superadmin' as any)}
+          className="bg-violet-600 rounded-xl p-4 mb-4 flex-row items-center"
+          activeOpacity={0.8}
+        >
+          <Feather name="shield" size={22} color="#fff" />
+          <View className="flex-1 ml-3">
+            <Text className="text-white font-black text-base">Super Admin</Text>
+            <Text className="text-violet-100 text-xs">Membresías, pagos y planes de los clientes</Text>
+          </View>
+          <Feather name="chevron-right" size={22} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      <Modal visible={selectorEmpresa} transparent animationType="fade" onRequestClose={() => setSelectorEmpresa(false)}>
+        <TouchableOpacity className="flex-1 bg-black/40 justify-end" activeOpacity={1} onPress={() => setSelectorEmpresa(false)}>
+          <View className="bg-white rounded-t-2xl p-4 pb-8 max-h-[75%]" onStartShouldSetResponder={() => true}>
+            <Text className="text-gray-950 font-black text-lg mb-3">Trabajar con</Text>
+            <ScrollView>
+              {misEmpresas.map((e) => (
+                <TouchableOpacity
+                  key={e.tenant_id}
+                  disabled={!!cambiandoEmpresa}
+                  onPress={async () => {
+                    if (e.tenant_id === tenantId) { setSelectorEmpresa(false); return; }
+                    setCambiandoEmpresa(e.tenant_id);
+                    try {
+                      await cambiarEmpresa(e.tenant_id);
+                      setSelectorEmpresa(false);
+                    } catch (err: any) {
+                      Alert.alert('No se pudo cambiar', err?.message || 'Intenta de nuevo.');
+                    } finally {
+                      setCambiandoEmpresa(null);
+                    }
+                  }}
+                  className={`flex-row items-center py-3 px-2 border-b border-gray-100 ${e.tenant_id === tenantId ? 'bg-blue-50' : ''}`}
+                >
+                  <Text className={`flex-1 text-base ${e.tenant_id === tenantId ? 'font-black text-blue-700' : 'text-gray-900'}`} numberOfLines={1}>{e.nombre}</Text>
+                  {cambiandoEmpresa === e.tenant_id
+                    ? <ActivityIndicator size="small" color="#1d4ed8" />
+                    : e.tenant_id === tenantId ? <Feather name="check" size={20} color="#1d4ed8" /> : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Ventanas y aluminio: crear proyecto por sistema, accesos y recientes (solo tipo 'aluminio'). */}
       <VentanasInicio />

@@ -469,17 +469,10 @@
     "sql/inventario_por_contar.sql": "abfabed153aaa7b8",
     "sql/morla_vieja_hermana_un_inventario.sql": "d3834b775c577951",
     "sql/dgii_razon_social_del_registro.sql": "4d635cd0671e1be1",
-    "sql/dgii_razon_social_del_registro_ajustes.sql": "5289df7ca65c9682"
+    "sql/dgii_razon_social_del_registro_ajustes.sql": "5289df7ca65c9682",
+    "sql/admin_registrar_pago_membresia.sql": "4f45afa70724ceea"
   },
   "historial": [
-    {
-      "fecha": "2026-11-10",
-      "nota": "code-review high: 9 hallazgos; arreglados 7 (desactivar en vez de borrar para conservar el contador, chequeo amplio de comprobantes ncf/encf/encf_asignado, rol de la empresa activa, boton solo en rango desde 1 sin usar, aviso E31/E32, try/finally, bloqueo guardar/quitar); RNC compartido entre empresas queda igual que ecf_cargar_secuencia; auditoria por fila conservada + RAISE LOG",
-      "archivos": [
-        "sql/ecf_quitar_secuencia.sql",
-        "src/components/configuracion/DgiiSecuenciasEcf.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-10",
       "nota": "code-review high x2: 1ra 10 hallazgos -> rediseño (traspaso al grabar la venta por trigger, no al escoger; ficha por id; precios al dia; espejo por codigo sin mayusculas; marcas/tipos/modelos por _espejo_*; filtros y busqueda por palabras). 2da 10 hallazgos -> solo ventas FT-, venta de la gemela en MotoPrestamos tambien trae, fallos anotados en catalogo_hermano_fallos, reposicion no pide piezas traidas, unidades con chasis no, stock por LATERAL, validacion/aviso cuentan lo de aqui. Queda: orden de despliegue (SQL antes del front, verificado en publica)",
@@ -1027,6 +1020,13 @@
       "nota": "code-review high emitir-fiscal: 3 importantes arreglados (nombre comercial borrado no se rellena: flag nombre_comercial_borrado; comparacion con espacios normalizados; sin config_empresa tambien pasa por el registro) + nits (error de PostgREST se registra; listado se mira en cada emision; null no borra)",
       "archivos": [
         "supabase/functions/emitir-fiscal/index.ts"
+      ]
+    },
+    {
+      "fecha": "2026-11-23",
+      "nota": "code-review high superadmin app + admin_registrar_pago: arreglados carrito al cambiar empresa, la app ya no mueve la empresa activa de la web al abrir, monto 0/vacio, coma decimal, cambio a medias, 1 año = 365 dias, sin sumar dias de prueba, registro al final, hoja del selector; prueba SQL encontro y se arreglo choque (tenant,plan,fecha_inicio)",
+      "archivos": [
+        "sql/admin_registrar_pago_membresia.sql"
       ]
     }
   ]
