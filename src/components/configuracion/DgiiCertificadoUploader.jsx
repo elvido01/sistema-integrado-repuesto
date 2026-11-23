@@ -121,21 +121,33 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
   const [registro, setRegistro] = useState(null); // { razon_social, tipo_persona, estado } | { noEncontrado: true }
   const nombreRef = useRef(nombre);
   nombreRef.current = nombre;
+  // La última razón social puesta sola desde el registro: si cambia el RNC no
+  // se queda la del anterior ni se confunde con algo escrito a mano.
+  const razonAuto = useRef(null);
   useEffect(() => {
     const digitos = String(rnc || '').replace(/\D/g, '');
-    if (digitos.length !== 9 && digitos.length !== 11) { setRegistro(null); return undefined; }
+    const soltarAuto = () => {
+      if (razonAuto.current && nombreRef.current === razonAuto.current) setNombre('');
+      razonAuto.current = null;
+    };
+    if (digitos.length !== 9 && digitos.length !== 11) { setRegistro(null); soltarAuto(); return undefined; }
     let vigente = true;
     const t = setTimeout(async () => {
       const { data, error } = await supabase.rpc('dgii_emisor_registrado', { p_rnc: digitos });
       if (!vigente) return;
       if (error) { setRegistro(null); return; }
       const fila = Array.isArray(data) ? data[0] : data;
-      if (!fila?.razon_social) { setRegistro({ noEncontrado: true, tipo_persona: digitos.length === 11 ? 'fisica' : 'juridica' }); return; }
+      if (!fila?.razon_social) {
+        soltarAuto();
+        setRegistro({ noEncontrado: true, tipo_persona: digitos.length === 11 ? 'fisica' : 'juridica' });
+        return;
+      }
       setRegistro(fila);
       const escrito = String(nombreRef.current || '').trim();
-      if (escrito && escrito !== fila.razon_social) {
-        setNombreComercial((c) => (String(c || '').trim() ? c : escrito));
-      }
+      const aMano = escrito && escrito !== razonAuto.current
+        && escrito.toUpperCase().replace(/\s+/g, ' ') !== fila.razon_social.toUpperCase().replace(/\s+/g, ' ');
+      if (aMano) setNombreComercial((c) => (String(c || '').trim() ? c : escrito));
+      razonAuto.current = fila.razon_social;
       setNombre(fila.razon_social);
     }, 400);
     return () => { vigente = false; clearTimeout(t); };
@@ -637,6 +649,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
               Tomada del registro de la DGII para este RNC. {registro.tipo_persona === 'fisica'
                 ? 'Es persona física: va el nombre de la persona, aunque el negocio use otro nombre.'
                 : 'Va tal como está registrada.'} El nombre del negocio va en «Nombre comercial».
+              {' '}Si la DGII le cambió el nombre hace poco y aquí sale el viejo, avisa a soporte MotoFlow.
             </p>
           ) : registro?.noEncontrado ? (
             <p className="text-[10px] text-amber-700">

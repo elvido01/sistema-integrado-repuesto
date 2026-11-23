@@ -3,7 +3,7 @@
 // lo del niño, del estudiante. La mensualidad se COPIA a la ficha y queda
 // fija: el nuevo recibe la del hermano que ya está o la tarifa más reciente;
 // un acuerdo se escribe a mano. La foto es obligatoria al inscribir.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, Users, Printer } from 'lucide-react';
 import { imprimirFichaEstudiante } from '@/lib/colegioReportes';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -43,6 +43,51 @@ export function fmtTel(v) {
   return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
 }
 const TEL = { type: 'tel', inputMode: 'tel', placeholder: '809-000-0000', autoComplete: 'off' };
+
+// (23/11/2026) Fecha de nacimiento escrita como dd/mm/aaaa: las barras se ponen
+// solas y se puede corregir un número sin pelear con el calendario del navegador.
+// Guarda 'aaaa-mm-dd' solo cuando la fecha está completa y es real; '' solo si
+// se borra todo. A medio escribir se queda la fecha anterior (no se pierde).
+// Se monta con key = ficha, así al abrir otra empieza con su fecha.
+const isoATexto = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+function textoAIso(txt) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(txt);
+  if (!m) return null;
+  const [, dd, mm, aaaa] = m;
+  const d = new Date(Number(aaaa), Number(mm) - 1, Number(dd));
+  if (d.getFullYear() !== Number(aaaa) || d.getMonth() !== Number(mm) - 1 || d.getDate() !== Number(dd)) return null;
+  if (Number(aaaa) < 1990 || d > new Date()) return null;
+  return `${aaaa}-${mm}-${dd}`;
+}
+function FechaFacil({ value, onChange, className }) {
+  const [txt, setTxt] = useState(isoATexto(value));
+  const ultimoEmitido = useRef(value || '');
+  useEffect(() => {
+    // Solo cuando el valor cambia desde fuera (abrir otra ficha): lo que se
+    // está escribiendo no se pisa.
+    if ((value || '') !== ultimoEmitido.current) { ultimoEmitido.current = value || ''; setTxt(isoATexto(value)); }
+  }, [value]);
+  const emitir = (v) => { ultimoEmitido.current = v; if (v !== (value || '')) onChange(v); };
+  const escribir = (raw) => {
+    const dig = raw.replace(/\D/g, '').slice(0, 8);
+    const t = dig.length > 4 ? `${dig.slice(0, 2)}/${dig.slice(2, 4)}/${dig.slice(4)}`
+      : dig.length > 2 ? `${dig.slice(0, 2)}/${dig.slice(2)}` : dig;
+    setTxt(t);
+    if (!t) emitir('');
+    else { const iso = textoAIso(t); if (iso) emitir(iso); }
+  };
+  const incompleta = txt && !textoAIso(txt);
+  const aviso = value
+    ? `${txt.length === 10 ? 'Fecha no válida' : 'Incompleta'}: se queda la guardada (${isoATexto(value)})`
+    : (txt.length === 10 ? 'Fecha no válida: no se guardará' : 'Incompleta: escribe dd/mm/aaaa');
+  return (
+    <>
+      <input type="text" inputMode="numeric" placeholder="dd/mm/aaaa" autoComplete="off" maxLength={10}
+        className={`${className} ${incompleta ? 'border-amber-400' : ''}`} value={txt} onChange={(e) => escribir(e.target.value)} />
+      {incompleta && <span className="text-[10px] text-amber-700">{aviso}</span>}
+    </>
+  );
+}
 
 function Campo({ label, children, className = '' }) {
   return <label className={`block ${className}`}><span className={etiqueta}>{label}</span><div className="mt-1">{children}</div></label>;
@@ -189,8 +234,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
   const guardar = async () => {
     // Validaciones de la ficha
     if (!est.nombres.trim() || !est.apellidos.trim()) return onError('Faltan datos', 'Escribe nombres y apellidos del estudiante.');
-    // Obligatoria (pedido del colegio 18/11/2026): sin ella no hay edad para el curso.
-    if (!est.fecha_nacimiento) return onError('Falta la fecha de nacimiento', 'Escribe la fecha de nacimiento del estudiante.');
+    // (23/11/2026) Ya no es obligatoria: los estudiantes cargados a mitad de año
+    // vinieron solo con nombre y grado.
     if (!est.curso_id || !est.tanda) return onError('Faltan datos', 'Escoge curso y tanda.');
     if (cupo && cupo.quedan <= 0 && ocupaLugarNuevo && ['activo', 'por_confirmar'].includes(est.estado || 'activo')) {
       return onError('Curso lleno', `${curso?.nombre || 'El curso'} ya tiene ${cupo.ocupados} de ${cupo.cupo}${cupo.por_seccion ? ` en la sección ${cupo.seccion || '(sin sección)'}` : ''}. Escoge otra tanda o sección, o sube el cupo en Configuración → Cursos.`);
@@ -279,8 +324,8 @@ export default function EstudianteFormModal({ open, onClose, estudiante, cursos,
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
               <Campo label="Nombres *"><input autoFocus={!editando} className={campo} value={est.nombres} onChange={(e) => s('nombres', e.target.value)} /></Campo>
               <Campo label="Apellidos *"><input className={campo} value={est.apellidos} onChange={(e) => s('apellidos', e.target.value)} /></Campo>
-              <Campo label={`Fecha de nacimiento *${edad != null ? ` · ${edad} años` : ''}`}>
-                <input type="date" min="1990-01-01" max={new Date().toISOString().slice(0, 10)} className={campo} value={est.fecha_nacimiento || ''} onChange={(e) => s('fecha_nacimiento', e.target.value)} />
+              <Campo label={`Fecha de nacimiento${edad != null ? ` · ${edad} años` : ''}`}>
+                <FechaFacil key={`${estudiante?.id || 'nuevo'}-${open ? 1 : 0}`} className={campo} value={est.fecha_nacimiento || ''} onChange={(v) => s('fecha_nacimiento', v)} />
               </Campo>
               <Campo label="Lugar de nacimiento"><input className={campo} value={est.lugar_nacimiento} onChange={(e) => s('lugar_nacimiento', e.target.value)} /></Campo>
               <Campo label="Número de hermanos"><input type="number" min="0" className={campo} value={est.numero_hermanos ?? ''} onChange={(e) => s('numero_hermanos', e.target.value)} /></Campo>

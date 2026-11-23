@@ -304,7 +304,7 @@
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
-    "src/components/configuracion/DgiiCertificadoUploader.jsx": "a426f774673025f3",
+    "src/components/configuracion/DgiiCertificadoUploader.jsx": "8b5535d0b4b49722",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
@@ -467,17 +467,11 @@
     "src/components/financiera/EditarDescripcionPrestamo.jsx": "0d8f8a02b1c5f176",
     "sql/aviso_vencimiento_ecf.sql": "d5b37bfe39e054f3",
     "sql/inventario_por_contar.sql": "abfabed153aaa7b8",
-    "sql/morla_vieja_hermana_un_inventario.sql": "d3834b775c577951"
+    "sql/morla_vieja_hermana_un_inventario.sql": "d3834b775c577951",
+    "sql/dgii_razon_social_del_registro.sql": "4d635cd0671e1be1",
+    "sql/dgii_razon_social_del_registro_ajustes.sql": "5289df7ca65c9682"
   },
   "historial": [
-    {
-      "fecha": "2026-11-09",
-      "nota": "code-review high (MontoInput en ventas/recibo/gastos/compromisos): 8 hallazgos; arreglados 5 (decimal se perdia si la pantalla guarda numero -> crudoAMostrar, ref como callback, type/inputMode no se pueden sobreescribir, cero a la izquierda); 3 de estilo sin efecto",
-      "archivos": [
-        "src/components/ventas/VentasFooter.jsx",
-        "src/pages/ReciboIngresoPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-09",
       "nota": "code-review high (vidrio por cuartos): 9 hallazgos; arreglados 8 (cantidad '3/4' se leia 34 -> leerCuartos en web y app, aviso al redondear y en 0, linea aparte por unidad o nota exacta y no por el nombre del producto, ColoresProducto select *, sin DROP en el SQL, 'plancha' en el precio, paso unico); aceptado: la nota en la descripcion como respaldo para facturas (no guardan unidad)",
@@ -1025,6 +1019,15 @@
         "sql/inventario_por_contar.sql",
         "sql/morla_vieja_hermana_un_inventario.sql",
         "src/pages/InventarioFisicoPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-23",
+      "nota": "code-review high: 4 importantes arreglados (fecha nacimiento no se borra a medio escribir; razon social del RNC anterior se limpia; razon_social_manual para listado viejo; trigger solo dgii_directo) + nits (comparacion sin mayusculas, prueba real, key en FechaFacil). Pendientes previos en emitir-fiscal: fallback config_empresa sin rnc_emisor y nombre_comercial vacio no se puede limpiar",
+      "archivos": [
+        "sql/dgii_razon_social_del_registro.sql",
+        "sql/dgii_razon_social_del_registro_ajustes.sql",
+        "src/components/configuracion/DgiiCertificadoUploader.jsx"
       ]
     }
   ]
