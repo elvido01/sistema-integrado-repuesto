@@ -217,7 +217,7 @@ const PlanesPage = () => {
         <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
           <div className="flex items-center justify-center gap-2 mb-3">
             <Zap className="w-6 h-6 text-yellow-400" />
-            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-wider">
+            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-wider !text-white">
               Planes y Precios
             </h1>
           </div>
