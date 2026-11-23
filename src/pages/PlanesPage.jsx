@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Crown, Shield, Sparkles, Clock, Check, X, Zap,
   Users, Package, FileText, Warehouse, BarChart3,
-  Camera, Globe, ChevronRight, Star, Loader2, BadgeCheck
+  Camera, Globe, ChevronRight, Star, Loader2, BadgeCheck, Gift
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSuscripcion } from '@/contexts/SuscripcionContext';
@@ -24,11 +24,25 @@ const DIAS_ANUAL = 365;
 // mismo precio con el tope extendido a 700 estudiantes), cobra normal.
 const PLAN_DEL_ESPECIAL = { educativo: 'EDUCA PRO' };
 
+// Lo que el plan gratis NO trae (el servidor lo frena igual: sql/plan_free.sql).
+const NO_INCLUYE_FREE = ['Facturación electrónica e-CF y reportes DGII', 'Ventas y compras a crédito', 'Cotizaciones en PDF'];
+
 // (20/10/2026) Lo que incluye cada plan, contado como beneficio y no como
 // nombre de módulo ("Carta de Ruta" no le dice nada a un cliente nuevo).
 // La facturación electrónica va en TODOS: es obligatoria con la DGII.
 // Cada plan suma a los de abajo ("Todo lo del Básico, más:").
 const INCLUYE = {
+  // (23/11/2026) El plan gratis se muestra (decisión del dueño). Lo que
+  // incluye sale de PERMITIDOS_FREE (lib/planes.js); lo que no, en NO_INCLUYE.
+  FREE: {
+    base: null,
+    items: [
+      'Punto de venta de contado con cierre de caja',
+      'Compras de contado e inventario',
+      'Clientes, suplidores y vendedores',
+      'Etiquetas de precio para tus productos',
+    ],
+  },
   // (29/10/2026) Solo para empresas sin inventario (servicios e inmobiliaria).
   SERVICIOS: {
     base: null,
@@ -125,6 +139,7 @@ const PlanesPage = () => {
   const ahorroAnual = (mensual) => Number(mensual || 0) * MESES_GRATIS_ANUAL;
 
   const planMeta = {
+    FREE:       { icon: Gift,     gradient: 'from-slate-500 to-slate-700',    color: 'slate',   badge: 'Gratis',          popular: false },
     TRIAL:      { icon: Clock,    gradient: 'from-amber-500 to-orange-500',   color: 'amber',   badge: 'Prueba Gratis',   popular: false },
     SERVICIOS:  { icon: FileText, gradient: 'from-sky-500 to-cyan-500',      color: 'sky',     badge: 'Solo facturación', popular: false },
     BASICO:     { icon: Shield,   gradient: 'from-blue-500 to-indigo-500',    color: 'blue',    badge: 'Ideal para iniciar', popular: false },
@@ -182,7 +197,7 @@ const PlanesPage = () => {
   };
 
   const handleSelectPlan = (plan) => {
-    if (plan.nombre === 'TRIAL') return;
+    if (plan.nombre === 'TRIAL' || plan.nombre === 'FREE') return;
     // Capturamos el ciclo elegido en el momento de seleccionar.
     setSelectedPlan({
       ...plan,
@@ -203,11 +218,13 @@ const PlanesPage = () => {
   // (06/11/2026) Un colegio ve solo los planes Educa; los demás no los ven.
   const esColegio = empresa?.tipo_negocio === 'educativo';
   const esEduca = (p) => p.segmento === 'educativo';
-  // (19/11/2026) FREE no se contrata ni se ofrece aquí todavía: llega solo
-  // (prueba sin compra) hasta el lanzamiento. Su tarjeta está en Inicio.
-  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL' && p.nombre !== 'FREE'
+  // (23/11/2026) FREE se muestra de primero (antes, 19/11, escondido hasta el
+  // lanzamiento). No se "selecciona": no hay nada que pagar.
+  const esFree = (p) => p?.nombre === 'FREE';
+  const paidPlanes = planes.filter(p => p.nombre !== 'TRIAL'
     && (isSuperAdmin || esEduca(p) === esColegio)
     && (p.nombre !== 'SERVICIOS' || sinInventario || isSuperAdmin));
+  paidPlanes.sort((a, b) => (esFree(b) ? 1 : 0) - (esFree(a) ? 1 : 0));
   const soloVistaAdmin = (plan) => (plan.nombre === 'SERVICIOS' && !sinInventario) || esEduca(plan) !== esColegio;
 
   return (
@@ -227,7 +244,7 @@ const PlanesPage = () => {
           </p>
           <div className="mt-4 inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-300/40 text-emerald-100 rounded-full px-4 py-1.5 text-xs font-bold">
             <BadgeCheck className="w-4 h-4" />
-            Facturación electrónica DGII incluida en todos los planes
+            Facturación electrónica DGII incluida en todos los planes de pago
           </div>
 
           {/* Toggle Mensual / Anual */}
@@ -279,7 +296,7 @@ const PlanesPage = () => {
       )}
 
       {/* Plans Grid */}
-      <div className="max-w-5xl mx-auto px-4 py-10">
+      <div className={`${paidPlanes.length > 3 ? "max-w-7xl" : "max-w-5xl"} mx-auto px-4 py-10`}>
         <div className={`grid grid-cols-1 gap-6 ${paidPlanes.length > 3 ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
           {paidPlanes.map((plan, i) => {
             const meta = planMeta[plan.nombre] || planMeta.BASICO;
@@ -331,6 +348,12 @@ const PlanesPage = () => {
 
                 {/* Precio */}
                 <div className="text-center py-5 border-b border-gray-100 bg-white">
+                  {esFree(plan) ? (
+                    <>
+                      <div className="text-4xl font-black text-gray-900">Gratis</div>
+                      <p className="text-gray-400 text-xs font-medium mt-1">para siempre · sin tarjeta</p>
+                    </>
+                  ) : (<>
                   <div className="flex items-baseline justify-center gap-1">
                     <span className="text-gray-400 text-lg font-bold">RD$</span>
                     <span className="text-4xl font-black text-gray-900">
@@ -362,6 +385,7 @@ const PlanesPage = () => {
                       por mes · {plan.duracion_dias} días
                     </p>
                   )}
+                  </>)}
                   {tieneEspecial(plan) && !rebaja(plan) && (
                     <p className="text-emerald-600 text-[11px] font-black uppercase mt-0.5" title={especial.nota}>Su plan especial</p>
                   )}
@@ -398,22 +422,28 @@ const PlanesPage = () => {
                       </span>
                     </div>
                   ))}
+                  {esFree(plan) && NO_INCLUYE_FREE.map((item) => (
+                    <div key={item} className="flex items-start gap-2">
+                      <X className="w-4 h-4 text-gray-300 mt-0.5 shrink-0" />
+                      <span className="text-sm text-gray-400 leading-snug">{item}</span>
+                    </div>
+                  ))}
                 </div>
 
                 {/* CTA */}
                 <div className="px-6 pb-6 pt-2 bg-white">
                   <Button
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={(isCurrent && !canPayCurrent) || pagoPendiente || soloVistaAdmin(plan)}
+                    disabled={(isCurrent && !canPayCurrent) || pagoPendiente || soloVistaAdmin(plan) || esFree(plan)}
                     className={`w-full h-11 font-black uppercase tracking-wider text-xs shadow-md transition-all ${
-                      (isCurrent && !canPayCurrent) || soloVistaAdmin(plan)
+                      (isCurrent && !canPayCurrent) || soloVistaAdmin(plan) || esFree(plan)
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : pagoPendiente
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : `bg-gradient-to-r ${meta.gradient} hover:opacity-90 text-white`
                     }`}
                   >
-                    {soloVistaAdmin(plan) ? 'No aplica a esta empresa' : isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
+                    {esFree(plan) ? (isCurrent ? 'Plan Actual' : 'Sin costo') : soloVistaAdmin(plan) ? 'No aplica a esta empresa' : isCurrent && !canPayCurrent ? 'Plan Actual' : pagoPendiente ? 'Pago en Revisión' : canPayCurrent ? (
                       <>
                         Pagar Plan Actual
                         <ChevronRight className="w-4 h-4 ml-2" />
