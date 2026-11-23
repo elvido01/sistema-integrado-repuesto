@@ -17,6 +17,7 @@
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import path from 'path';
+import os from 'os';
 import { leerToken } from './secretoLocal.mjs';
 
 const RAIZ = path.resolve(import.meta.dirname, '..');
@@ -37,8 +38,11 @@ if (!existsSync(carpeta)) {
 const TOKEN = leerToken('SUPABASE_ACCESS_TOKEN');
 
 // El binario del CLI. El wrapper de npm crashea en Windows.
+// (23/11/2026) En la otra PC (usuario 'user') vive en ~/supabase-cli/supabase.exe
+// (copiado del paquete npm supabase@2.40.7, que sí corre ahí).
 const CANDIDATOS = [
   'C:/Users/PC/supabase-cli/supabase-go.exe',
+  path.join(os.homedir(), 'supabase-cli', 'supabase.exe'),
   'supabase',
 ];
 const cli = CANDIDATOS.find((c) => c === 'supabase' || existsSync(c)) || 'supabase';

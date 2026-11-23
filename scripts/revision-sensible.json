@@ -398,7 +398,7 @@
     "supabase/functions/emitir-fiscal/dgii_signer.ts": "3ab01a57d8c1f932",
     "supabase/functions/emitir-fiscal/dgii_xml_builder.ts": "3ce87e291d537075",
     "supabase/functions/emitir-fiscal/import_map.json": "3d5861c491100d4a",
-    "supabase/functions/emitir-fiscal/index.ts": "a73dbf87658bdfdb",
+    "supabase/functions/emitir-fiscal/index.ts": "8143d439d00c582c",
     "supabase/functions/motoflow-compras-advisor/deno.json": "614da5cfe2cb7462",
     "supabase/functions/motoflow-compras-advisor/index.ts": "e873b25160eded59",
     "supabase/functions/motoflow-compras-advisor/llm.ts": "14e79def6083d158",
@@ -472,14 +472,6 @@
     "sql/dgii_razon_social_del_registro_ajustes.sql": "5289df7ca65c9682"
   },
   "historial": [
-    {
-      "fecha": "2026-11-09",
-      "nota": "code-review high (vidrio por cuartos): 9 hallazgos; arreglados 8 (cantidad '3/4' se leia 34 -> leerCuartos en web y app, aviso al redondear y en 0, linea aparte por unidad o nota exacta y no por el nombre del producto, ColoresProducto select *, sin DROP en el SQL, 'plancha' en el precio, paso unico); aceptado: la nota en la descripcion como respaldo para facturas (no guardan unidad)",
-      "archivos": [
-        "src/components/ventas/VarianteVentaModal.jsx",
-        "src/hooks/useVentas.js"
-      ]
-    },
     {
       "fecha": "2026-11-10",
       "nota": "code-review high: 9 hallazgos; arreglados 7 (desactivar en vez de borrar para conservar el contador, chequeo amplio de comprobantes ncf/encf/encf_asignado, rol de la empresa activa, boton solo en rango desde 1 sin usar, aviso E31/E32, try/finally, bloqueo guardar/quitar); RNC compartido entre empresas queda igual que ecf_cargar_secuencia; auditoria por fila conservada + RAISE LOG",
@@ -1028,6 +1020,13 @@
         "sql/dgii_razon_social_del_registro.sql",
         "sql/dgii_razon_social_del_registro_ajustes.sql",
         "src/components/configuracion/DgiiCertificadoUploader.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-23",
+      "nota": "code-review high emitir-fiscal: 3 importantes arreglados (nombre comercial borrado no se rellena: flag nombre_comercial_borrado; comparacion con espacios normalizados; sin config_empresa tambien pasa por el registro) + nits (error de PostgREST se registra; listado se mira en cada emision; null no borra)",
+      "archivos": [
+        "supabase/functions/emitir-fiscal/index.ts"
       ]
     }
   ]
