@@ -113,6 +113,34 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
   const [fechaVencimientoSecuencia, setFechaVencimientoSecuencia] = useState('');
   const fileInputRef = useRef(null);
 
+  // (23/11/2026) La razón social del e-CF tiene que ser la que la DGII tiene
+  // para ese RNC (Aponte: cédula de ISRAEL APONTE MARTINEZ, no "REPUESTOS
+  // APONTE"; la DGII rechazó el Paso 5). Se busca en el listado de la DGII y
+  // se pone sola; el nombre del negocio va en "Nombre comercial". La base lo
+  // impone igual al guardar (trg_dgii_emisor_razon_del_registro).
+  const [registro, setRegistro] = useState(null); // { razon_social, tipo_persona, estado } | { noEncontrado: true }
+  const nombreRef = useRef(nombre);
+  nombreRef.current = nombre;
+  useEffect(() => {
+    const digitos = String(rnc || '').replace(/\D/g, '');
+    if (digitos.length !== 9 && digitos.length !== 11) { setRegistro(null); return undefined; }
+    let vigente = true;
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('dgii_emisor_registrado', { p_rnc: digitos });
+      if (!vigente) return;
+      if (error) { setRegistro(null); return; }
+      const fila = Array.isArray(data) ? data[0] : data;
+      if (!fila?.razon_social) { setRegistro({ noEncontrado: true, tipo_persona: digitos.length === 11 ? 'fisica' : 'juridica' }); return; }
+      setRegistro(fila);
+      const escrito = String(nombreRef.current || '').trim();
+      if (escrito && escrito !== fila.razon_social) {
+        setNombreComercial((c) => (String(c || '').trim() ? c : escrito));
+      }
+      setNombre(fila.razon_social);
+    }, 400);
+    return () => { vigente = false; clearTimeout(t); };
+  }, [rnc]);
+
   const fetchInfo = useCallback(async () => {
     setLoading(true);
     try {
@@ -588,15 +616,39 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">RNC del emisor</Label>
           <Input value={rnc} onChange={(e) => setRnc(e.target.value)} placeholder="1-30-12345-6" />
+          {registro && (
+            <p className="text-[10px] font-semibold text-slate-600">
+              {registro.tipo_persona === 'fisica' ? 'Persona física (cédula)' : 'Persona jurídica (empresa)'}
+              {registro.estado && registro.estado !== 'ACTIVO' ? ` · DGII: ${registro.estado}` : ''}
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Razon social</Label>
-          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="NOMBRE COMERCIAL SRL" />
+          <Input
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            readOnly={!!registro?.razon_social}
+            className={registro?.razon_social ? 'bg-gray-100' : undefined}
+            placeholder="Como está registrado en la DGII"
+          />
+          {registro?.razon_social ? (
+            <p className="text-[10px] text-emerald-700">
+              Tomada del registro de la DGII para este RNC. {registro.tipo_persona === 'fisica'
+                ? 'Es persona física: va el nombre de la persona, aunque el negocio use otro nombre.'
+                : 'Va tal como está registrada.'} El nombre del negocio va en «Nombre comercial».
+            </p>
+          ) : registro?.noEncontrado ? (
+            <p className="text-[10px] text-amber-700">
+              Este RNC no está en el listado de la DGII cargado. Escribe la razón social EXACTA como sale en la DGII
+              {registro.tipo_persona === 'fisica' ? ' (persona física: el nombre de la persona, no el del negocio)' : ''}.
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Nombre comercial</Label>
           <Input value={nombreComercial} onChange={(e) => setNombreComercial(e.target.value)} placeholder="Repuestos Morla" />
-          <p className="text-[10px] text-gray-500">Como aparecera en la representacion impresa (RI) del e-CF. Si lo dejas vacio se usa la razon social.</p>
+          <p className="text-[10px] text-gray-500">El nombre del negocio. Sale arriba en la representacion impresa (RI); la razon social va debajo. Si lo dejas vacio se usa la razon social.</p>
         </div>
         <div className="space-y-1.5">
           <Label className="text-[11px] font-bold text-gray-700 uppercase">Municipio</Label>
