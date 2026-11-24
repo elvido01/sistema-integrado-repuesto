@@ -31,6 +31,29 @@ export const TOOLS = [
     args: (a) => ({ p_texto: String(a.texto || ''), p_limite: a.limite ?? 8 }),
   },
   {
+    // (24/11/2026) Recorrer el catalogo de UNA moto. Para cuando el cliente
+    // no sabe el nombre de la pieza ("el plastico de abajo del asiento de la
+    // Wave"), pregunta por un tipo ("plasticos", "lo electrico") o escribe el
+    // modelo mal ("estraiker"): buscar_piezas solo encuentra palabras exactas.
+    name: 'piezas_por_moto',
+    description:
+      'Recorre el catalogo de UNA motocicleta. Sin "tipo" devuelve que tipos de pieza hay para esa moto (y cuantos con existencia); ' +
+      'con "tipo" (ej. "plasticos", "electrico", "frenos", "gomas", "careta") devuelve esas piezas con precio y EXISTENCIA REAL. ' +
+      'Usala cuando el cliente no sabe como se llama la pieza, pregunta por una categoria, o buscar_piezas no encontro nada para su moto. ' +
+      'Entiende el modelo mal escrito ("estraiker" = Stryker).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        moto: { type: 'string', description: 'Marca y/o modelo de la motocicleta, como lo dijo el cliente. Ej: "navi", "tvs stryker 125", "platina"' },
+        tipo: { type: 'string', description: 'Opcional. Tipo o categoria de pieza. Ej: "plasticos", "faroles", "kit de arrastre". Vacio = ver los tipos que hay' },
+        limite: { type: 'integer', description: 'Cuantas piezas devolver (1-30, por defecto 15)' },
+      },
+      required: ['moto'],
+    },
+    rpc: 'mcp_piezas_por_moto',
+    args: (a) => ({ p_moto: String(a.moto || ''), p_tipo: a.tipo ? String(a.tipo) : null, p_limite: a.limite ?? 15 }),
+  },
+  {
     name: 'ver_pieza',
     description:
       'Devuelve el detalle de UNA pieza por su codigo exacto: precio, existencia, ubicacion en almacen, ITBIS y garantia. ' +
