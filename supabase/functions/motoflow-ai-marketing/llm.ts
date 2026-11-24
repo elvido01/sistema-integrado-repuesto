@@ -93,20 +93,29 @@ export async function callLLM(opts: {
 // el texto (CRM, Jarvis, chat cuestan centavos). Toda la cuenta es UNA para
 // todas las empresas, así que se suma todo. Se cambia con el secreto
 // IA_TOPE_IMAGENES_USD. El mes es el de RD (UTC-4).
-export async function presupuestoImagenes(sb: any): Promise<{ ok: boolean; gastado: number; tope: number }> {
+// (24/11/2026) Tope DIARIO además del mensual, pedido del dueño: el saldo de
+// OpenAI se vació (05/11) y con él se apagó Hermes en la extensión, que gasta
+// centavos (US$0.14 en 30 días) frente a ~US$0.80/día de imágenes. US$1.50 al
+// día no frena un día normal (el más caro fue US$1.75) y sí un desborde.
+// Se cambia con el secreto IA_TOPE_IMAGENES_DIA_USD.
+export async function presupuestoImagenes(sb: any): Promise<{ ok: boolean; gastado: number; tope: number; gastado_hoy?: number; tope_dia?: number }> {
     const tope = Number(Deno.env.get('IA_TOPE_IMAGENES_USD') || 8.5);
+    const topeDia = Number(Deno.env.get('IA_TOPE_IMAGENES_DIA_USD') || 1.5);
     const ahoraRD = new Date(Date.now() - 4 * 3600000);
     const inicioMes = new Date(Date.UTC(ahoraRD.getUTCFullYear(), ahoraRD.getUTCMonth(), 1, 4, 0, 0)).toISOString();
+    const inicioDia = new Date(Date.UTC(ahoraRD.getUTCFullYear(), ahoraRD.getUTCMonth(), ahoraRD.getUTCDate(), 4, 0, 0)).toISOString();
     const [a, b] = await Promise.all([
-        sb.from('ai_agent_runs').select('cost_usd').like('model', 'gpt-image%').gte('created_at', inicioMes).limit(5000),
-        sb.from('ai_marketing_content').select('cost_usd').gte('created_at', inicioMes).limit(5000),
+        sb.from('ai_agent_runs').select('cost_usd, created_at').like('model', 'gpt-image%').gte('created_at', inicioMes).limit(5000),
+        sb.from('ai_marketing_content').select('cost_usd, created_at').gte('created_at', inicioMes).limit(5000),
     ]);
-    const suma = (r: any) => (r?.data || []).reduce((s: number, x: any) => s + Number(x.cost_usd || 0), 0);
-    const gastado = Math.round((suma(a) + suma(b)) * 100) / 100;
+    const filas = [...(a?.data || []), ...(b?.data || [])];
+    const suma = (xs: any[]) => Math.round(xs.reduce((s: number, x: any) => s + Number(x.cost_usd || 0), 0) * 100) / 100;
+    const gastado = suma(filas);
+    const gastadoHoy = suma(filas.filter((x: any) => x.created_at >= inicioDia));
     // Si no se pudo leer el gasto, no se frena el trabajo (mejor una imagen de
     // más que una publicación perdida por un fallo de lectura).
-    if (a?.error) return { ok: true, gastado, tope };
-    return { ok: gastado < tope, gastado, tope };
+    if (a?.error) return { ok: true, gastado, tope, gastado_hoy: gastadoHoy, tope_dia: topeDia };
+    return { ok: gastado < tope && gastadoHoy < topeDia, gastado, tope, gastado_hoy: gastadoHoy, tope_dia: topeDia };
 }
 
 export async function generateImage(opts: {

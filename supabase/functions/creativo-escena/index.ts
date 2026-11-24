@@ -435,7 +435,10 @@ Deno.serve(async (req: Request) => {
   // presupuesto, el Creativo monta la pieza con la plantilla (gratis).
   const pres = await presupuestoImagenes(sb);
   if (!pres.ok) {
-    return json({ ok: false, error: `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). La pieza sale con la plantilla; el presupuesto se renueva el día 1.` }, 402);
+    const delDia = pres.gastado < pres.tope;
+    return json({ ok: false, error: delDia
+      ? `Tope diario de imágenes alcanzado (US$${(pres.gastado_hoy ?? 0).toFixed(2)} de US$${(pres.tope_dia ?? 0).toFixed(2)} hoy). La pieza sale con la plantilla; mañana se renueva.`
+      : `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). La pieza sale con la plantilla; el presupuesto se renueva el día 1.` }, 402);
   }
 
   const t0 = Date.now();

@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
       // (22/11/2026) Sin crédito en OpenAI no es culpa de la pregunta: no se
       // gasta su intento y se para la vuelta. Al recargar, se retoma lo que
       // haya entrado en las últimas 6 h.
-      if (/no credits|insufficient_quota|OpenAI 429|rate limit/i.test(msg)) { out.ok = false; break; }
+      if (/no credits|insufficient_quota|OpenAI 429|Gemini 429|RESOURCE_EXHAUSTED|rate limit/i.test(msg)) { out.ok = false; break; }
       await admin.rpc('hermes_sombra_marcar_error', { p_message_id: p.message_id, p_error: msg });
     }
   }
@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
       if (Date.now() - t0 > TOPE_MS) break;
       try {
         const ev = await juzgar(apiKey, x);
-        await admin.rpc('hermes_sombra_guardar_evaluacion', { p_id: x.id, p_eval: { ...ev, modelo: MODELO_JUEZ } });
+        await admin.rpc('hermes_sombra_guardar_evaluacion', { p_id: x.id, p_eval: ev });
         out.juzgadas++;
       } catch (e) {
         out.errores.push(`juez: ${String(e?.message || e).slice(0, 200)}`);
@@ -143,16 +143,31 @@ async function juzgar(apiKey: string, x: any) {
       ? `PIEZAS QUE HERMES CONSULTÓ EN EL INVENTARIO:\n${JSON.stringify(x.piezas).slice(0, 1500)}` : '',
   ].filter(Boolean).join('\n\n');
 
+  const cuerpo = {
+    temperature: 0,
+    response_format: { type: 'json_schema', json_schema: ESQUEMA },
+    messages: [{ role: 'system', content: sistema }, { role: 'user', content: usuario }],
+  };
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODELO_JUEZ, temperature: 0,
-      response_format: { type: 'json_schema', json_schema: ESQUEMA },
-      messages: [{ role: 'system', content: sistema }, { role: 'user', content: usuario }],
-    }),
+    body: JSON.stringify({ model: MODELO_JUEZ, ...cuerpo }),
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error?.message || `OpenAI ${r.status}`);
-  return JSON.parse(j.choices[0].message.content);
+  const j = await r.json().catch(() => null);
+  if (r.ok) return { ...JSON.parse(j.choices[0].message.content), modelo: MODELO_JUEZ };
+
+  // (24/11/2026) Sin saldo en OpenAI, el juez sigue con Gemini (igual que hermes-sugerir).
+  const geminiKey = Deno.env.get('GEMINI_API_KEY');
+  const detalle = JSON.stringify(j ?? {});
+  if (!geminiKey || !(r.status === 429 || r.status >= 500 || /insufficient_quota|no credits|billing/i.test(detalle))) {
+    throw new Error(j?.error?.message || `OpenAI ${r.status}`);
+  }
+  const g = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${geminiKey}` },
+    body: JSON.stringify({ model: 'gemini-2.5-flash', reasoning_effort: 'none', ...cuerpo }),
+  });
+  const gj = await g.json().catch(() => null);
+  if (!g.ok) throw new Error(`Gemini ${g.status}: ${JSON.stringify(gj ?? {}).slice(0, 200)}`);
+  return { ...JSON.parse(gj.choices[0].message.content), modelo: 'gemini-2.5-flash' };
 }

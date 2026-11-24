@@ -109,12 +109,12 @@ Deno.serve(async (req: Request) => {
       .slice(0, 8)
       .map(({ customer_message, bot_reply, human_reply }: any) => ({ customer_message, bot_reply, human_reply }));
 
-    const { texto, usadas } = await redactar(ctx, apiKey, mcpUrl, token);
+    const { texto, usadas, modelo } = await redactar(ctx, apiKey, mcpUrl, token);
     if (!texto) return json({ ok: false, error: 'La IA no devolvio texto' }, 502);
     if (/^\s*NO_RESPONDER\s*$/i.test(texto)) {
       if (sombra) {
         await supabase.rpc('hermes_guardar_sombra', {
-          p_message_id: ctx.message_id, p_texto: null, p_datos: { no_responder: true, modelo: MODELO },
+          p_message_id: ctx.message_id, p_texto: null, p_datos: { no_responder: true, modelo },
         });
         return json({ ok: true, sombra: true, no_responder: true });
       }
@@ -134,7 +134,7 @@ Deno.serve(async (req: Request) => {
       const piezas = usadas.flatMap((u: any) => u.piezas || []).slice(0, 8);
       const { data: g, error: eg } = await supabase.rpc('hermes_guardar_sombra', {
         p_message_id: ctx.message_id, p_texto: texto,
-        p_datos: { modelo: MODELO, herramientas: usadas.map((u: any) => u.herramienta).filter(Boolean),
+        p_datos: { modelo, herramientas: usadas.map((u: any) => u.herramienta).filter(Boolean),
                    piezas, fotos_vistas: (ctx.fotos || []).length, hubo_foto: !!ctx.hubo_foto },
       });
       if (eg || !g?.guardado) return json({ ok: false, error: eg?.message || 'No se guardó la sombra' }, 500);
@@ -145,7 +145,7 @@ Deno.serve(async (req: Request) => {
       p_message_id: ctx.message_id,
       p_sugerencia: texto,
       p_datos: {
-        herramientas_usadas: usadas, modelo: MODELO, via: 'mcp',
+        herramientas_usadas: usadas, modelo, via: 'mcp',
         // Queda escrito si miro la foto: sin esto no hay forma de saber
         // despues si verla mejoro la respuesta o solo encarecio la llamada.
         fotos_vistas: (ctx.fotos || []).length, hubo_foto: !!ctx.hubo_foto,
@@ -319,34 +319,23 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
 
   const usadas: any[] = [];
 
+  const prov = { usar: 'openai' as 'openai' | 'gemini', modelo: MODELO };
+
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: MODELO,
-        messages: mensajes,
-        tools: herramientas.length ? herramientas : undefined,
-        // En la ultima vuelta se le corta el acceso a herramientas para
-        // forzar una respuesta: sin esto podria quedarse consultando.
-        tool_choice: vuelta === MAX_VUELTAS - 1 ? 'none' : 'auto',
-        temperature: 0.3,   // bajo: inventar un precio seria peor que sonar sosa
-        max_tokens: 400,
-      }),
-    });
-
-    if (!r.ok) {
-      const detalle = await r.text().catch(() => '');
-      throw new Error(`OpenAI ${r.status}: ${detalle.slice(0, 200)}`);
-    }
-
-    const data = await r.json();
-    const msg = data?.choices?.[0]?.message;
-    if (!msg) throw new Error('OpenAI no devolvio mensaje');
+    const peticion = {
+      messages: mensajes,
+      tools: herramientas.length ? herramientas : undefined,
+      // En la ultima vuelta se le corta el acceso a herramientas para
+      // forzar una respuesta: sin esto podria quedarse consultando.
+      tool_choice: herramientas.length ? (vuelta === MAX_VUELTAS - 1 ? 'none' : 'auto') : undefined,
+      temperature: 0.3,   // bajo: inventar un precio seria peor que sonar sosa
+      max_tokens: 400,
+    };
+    const msg = await pedirAlModelo(prov, apiKey, peticion);
 
     const llamadas = msg.tool_calls || [];
     if (!llamadas.length) {
-      return { texto: String(msg.content || '').trim(), usadas };
+      return { texto: String(msg.content || '').trim(), usadas, modelo: prov.modelo };
     }
 
     mensajes.push(msg);
@@ -375,5 +364,85 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     }
   }
 
-  return { texto: '', usadas };
+  return { texto: '', usadas, modelo: prov.modelo };
+}
+
+// ── OpenAI, y Gemini de respaldo ────────────────────────────
+// (24/11/2026) El 05/11 el saldo de la API de OpenAI llegó a cero y Hermes se
+// apagó en la extensión sin que nadie lo notara (la suscripción de ChatGPT no
+// paga la API). Si OpenAI dice que no hay saldo, que hay demasiadas llamadas o
+// se cae, la MISMA conversación sigue con Gemini por su capa compatible con
+// OpenAI: mismos mensajes, mismas herramientas. Una vez que cambia, se queda
+// en Gemini hasta terminar esa sugerencia.
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const MODELO_GEMINI = 'gemini-2.5-flash';
+
+async function pedirAlModelo(prov: { usar: 'openai' | 'gemini'; modelo: string }, apiKey: string, peticion: any) {
+  if (prov.usar === 'openai') {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: MODELO, ...peticion }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const msg = data?.choices?.[0]?.message;
+      if (!msg) throw new Error('OpenAI no devolvio mensaje');
+      return msg;
+    }
+    const detalle = await r.text().catch(() => '');
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+    const sePuedeCambiar = r.status === 429 || r.status >= 500 || /insufficient_quota|no credits|billing/i.test(detalle);
+    if (!geminiKey || !sePuedeCambiar) throw new Error(`OpenAI ${r.status}: ${detalle.slice(0, 200)}`);
+    console.warn('[hermes-sugerir] OpenAI', r.status, '→ Gemini');
+    prov.usar = 'gemini';
+    prov.modelo = MODELO_GEMINI;
+  }
+
+  const geminiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
+  const r = await fetch(GEMINI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${geminiKey}` },
+    body: JSON.stringify({
+      model: MODELO_GEMINI,
+      // Sin "pensar": con max_tokens 400 el razonamiento se comería la respuesta.
+      reasoning_effort: 'none',
+      ...peticion,
+      messages: await mensajesParaGemini(peticion.messages),
+    }),
+  });
+  if (!r.ok) {
+    const detalle = await r.text().catch(() => '');
+    throw new Error(`Gemini ${r.status}: ${detalle.slice(0, 200)}`);
+  }
+  const data = await r.json();
+  const msg = data?.choices?.[0]?.message;
+  if (!msg) throw new Error('Gemini no devolvio mensaje');
+  return msg;
+}
+
+// Gemini no acepta `detail` ni (siempre) una URL de imagen: las fotos del
+// cliente van incrustadas en base64. Una foto que no baje se quita y se avisa
+// en el texto, para que no conteste como si la hubiera visto.
+async function mensajesParaGemini(mensajes: any[]) {
+  return Promise.all(mensajes.map(async (m: any) => {
+    if (!Array.isArray(m.content)) return m;
+    const partes = await Promise.all(m.content.map(async (p: any) => {
+      if (p?.type !== 'image_url') return p;
+      const url = p.image_url?.url || '';
+      if (url.startsWith('data:')) return { type: 'image_url', image_url: { url } };
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(String(r.status));
+        const mime = r.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return { type: 'image_url', image_url: { url: `data:${mime};base64,${btoa(bin)}` } };
+      } catch {
+        return { type: 'text', text: '(Una foto del cliente no se pudo abrir: no digas que la viste.)' };
+      }
+    }));
+    return { ...m, content: partes };
+  }));
 }

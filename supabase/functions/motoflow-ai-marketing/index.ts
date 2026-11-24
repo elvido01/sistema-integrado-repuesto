@@ -327,7 +327,10 @@ async function genImage(supabase: any, tenant_id: string, uid: string, settings:
 
     const pres = await presupuestoImagenes(supabase);
     if (!pres.ok) {
-        return json({ ok: false, error: 'tope_presupuesto', mensaje: `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). Se renueva el día 1.` }, 402);
+        const delDia = pres.gastado < pres.tope;
+        return json({ ok: false, error: 'tope_presupuesto', mensaje: delDia
+            ? `Tope diario de imágenes alcanzado (US$${(pres.gastado_hoy ?? 0).toFixed(2)} de US$${(pres.tope_dia ?? 0).toFixed(2)} hoy). Mañana se renueva.`
+            : `Presupuesto mensual de imágenes agotado (US$${pres.gastado.toFixed(2)} de US$${pres.tope.toFixed(2)}). Se renueva el día 1.` }, 402);
     }
     const img = await generateImage({ prompt, size: body?.size || '1024x1024', quality: body?.quality || 'medium' });
 
