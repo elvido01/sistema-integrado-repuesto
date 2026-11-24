@@ -225,6 +225,13 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     '   suplidor". Nunca lo mandes a otra tienda ni a buscar en linea.',
     '4. Lo agotado (existencia 0) no se ofrece como opcion. Y nunca digas cuantas',
     '   unidades quedan: solo si hay o no hay.',
+    // (24/11/2026) Goma Michelin 18 agotada: el cliente insistio "digame el
+    // precio para saber mas o menos", la tienda le dio 3,750 y Hermes solo
+    // repitio "no tengo 18". Pedir el precio de lo agotado es valido.
+    '   PERO si el cliente PIDE el precio de algo agotado ("para saber mas o menos",',
+    '   "aunque no haya"), BUSCALO y dale el precio, aclarando que ahora no hay y',
+    '   ofreciendo conseguirlo: "esa sale en 3,750, pero ahora no la tengo; ¿te la',
+    '   consigo?". Nunca contestes solo "no la tengo" a una pregunta de precio.',
     '5. Nunca le digas al cliente que no puedes consultar, verificar o ver precios.',
     '   Si una herramienta falla, escribe "deja que te confirmo" y nada mas.',
     '6. Si hay varias parecidas, da las 2 o 3 mas probables con su precio, o',
