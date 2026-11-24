@@ -281,7 +281,7 @@
     "sql/whatsapp_extension_financiera_morosos.sql": "5ea44609d9a5e1a1",
     "sql/whatsapp_extension_gestion_cobro.sql": "1b8abb432a2be858",
     "src/components/ai-marketing/VentasPorCanalCard.jsx": "d2eaed0471b12bde",
-    "src/components/bancos/CuentaBancariaSelect.jsx": "eba86583c726d2d7",
+    "src/components/bancos/CuentaBancariaSelect.jsx": "02065c576fc486c1",
     "src/components/bancos/EfectivoDelDia.jsx": "e74854edc35b5c32",
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
     "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "b9ccd9d2ab7f3435",
+    "src/pages/colegio/CajaColegioPage.jsx": "7f428db32bfefddd",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -480,20 +480,11 @@
     "src/components/admin/FacturarMembresiaDialog.jsx": "989560eb1dd4a63f",
     "src/lib/facturaMotoflow.js": "1ff37bc9b3bfbe65",
     "sql/compras_cuentan_ventas_de_la_hermana.sql": "e87b431e8e5940a0",
-    "sql/presupuesto_compras_cuenta_la_hermana.sql": "0b718539afd53af4"
+    "sql/presupuesto_compras_cuenta_la_hermana.sql": "0b718539afd53af4",
+    "sql/colegio_cuentas_bancarias.sql": "49f0253e476df8fc",
+    "src/components/colegio/CuentasBancariasColegio.jsx": "48dd1033dd09db90"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high x3: ITBIS servicios = cotejo solo sobre montos tecleados (catalogo/comision/factura guardada intactos); produccion con E31 o E32; F10 frena venta sin secuencia del tipo del cliente (no en edicion, refresca preview). Pendiente conocido: POS movil no tiene el freno; descuento de lineas guardadas preexistente.",
-      "archivos": [
-        "src/components/configuracion/DgiiSecuenciasEcf.jsx",
-        "src/components/ventas/LineasServicios.jsx",
-        "src/hooks/useVentas.js",
-        "src/pages/VentasPage.jsx",
-        "supabase/functions/emitir-fiscal/index.ts"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: dgii_xml_builder ANECF reescrito segun Formato Anulacion e-NCF v1.0 (RncEmisor, FechaHoraAnulacioneNCF, tabla de rangos por TipoeCF, rangos que se pisan rechazados, fecha ISO a hora RD); telefono emisor ###-###-#### en el builder del Emisor. Hallazgos atendidos; printPOS margenes repetidos por hoja y tipo carta.",
@@ -1038,6 +1029,16 @@
       "archivos": [
         "sql/compras_cuentan_ventas_de_la_hermana.sql",
         "sql/presupuesto_compras_cuenta_la_hermana.sql"
+      ]
+    },
+    {
+      "fecha": "2026-11-24",
+      "nota": "code-review high colegio cuentas bancarias: 9 hallazgos. Arreglados: solo cuentas DOP (form y selector de la Caja), bloqueo por advisory lock en el limite, plan desde suscripciones, solo direccion edita, texto 'creala en Configuracion del Colegio', Actualizar recarga la pestaña, spinner sin tenant. Pre-existente sin tocar: el RPC de cobro no mira activo.",
+      "archivos": [
+        "sql/colegio_cuentas_bancarias.sql",
+        "src/components/bancos/CuentaBancariaSelect.jsx",
+        "src/components/colegio/CuentasBancariasColegio.jsx",
+        "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
   ]

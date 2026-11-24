@@ -66,7 +66,9 @@ export default function CuentaBancariaSelect({ value, onChange, onSelect, moneda
   if (!cargando && cuentas.length === 0) {
     return (
       <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-        No hay cuentas bancarias{moneda ? ` en ${moneda}` : ''}. Créalas en el módulo <b>Cuentas Bancarias</b>.
+        No hay cuentas bancarias{moneda ? ` en ${moneda}` : ''}. Créalas en {empresa?.tipo_negocio === 'educativo'
+          ? <><b>Configuración del Colegio → Cuentas bancarias</b></>
+          : <>el módulo <b>Cuentas Bancarias</b></>}.
       </div>
     );
   }

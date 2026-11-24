@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { mesesDelAnio, tarifaSugerida } from '@/lib/colegio';
+import CuentasBancariasColegio from '@/components/colegio/CuentasBancariasColegio';
 
 const fmt = (v, moneda = 'DOP') =>
   `${moneda === 'USD' ? 'US$' : 'RD$'}${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,6 +36,7 @@ const PESTANAS = [
   ['cursos', 'Cursos y tandas'],
   ['anios', 'Año escolar'],
   ['reglas', 'Reglas de cobro'],
+  ['cuentas', 'Cuentas bancarias'],
 ];
 
 export default function ColegioConfigPage() {
@@ -55,6 +57,7 @@ export default function ColegioConfigPage() {
   const [tarifas, setTarifas] = useState([]);
   const [conceptos, setConceptos] = useState([]);
   const [nuevaTarifa, setNuevaTarifa] = useState(null);   // { monto, nota } mientras se agrega
+  const [recargas, setRecargas] = useState(0);   // "Actualizar" también recarga las cuentas bancarias
 
   const error = useCallback((titulo, e) => {
     toast({ title: titulo, description: e?.message || String(e || ''), variant: 'destructive' });
@@ -145,7 +148,7 @@ export default function ColegioConfigPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={cargar} disabled={cargando}>
+          <Button variant="outline" size="sm" onClick={() => { cargar(); setRecargas((n) => n + 1); }} disabled={cargando}>
             <RefreshCw className={`w-4 h-4 mr-1 ${cargando ? 'animate-spin' : ''}`} /> Actualizar
           </Button>
         </div>
@@ -179,6 +182,7 @@ export default function ColegioConfigPage() {
           {pestana === 'reglas' && (
             <Reglas cfg={cfg} tenantId={tenantId} error={error} recargar={cargar} toast={toast} />
           )}
+          {pestana === 'cuentas' && <CuentasBancariasColegio key={recargas} error={error} toast={toast} esDireccion={esDireccion} />}
         </div>
       </div>
     </div>

@@ -723,7 +723,8 @@ export default function CajaColegioPage() {
                     </div>
                     {conBanco(f.forma) && (
                       <>
-                        <CuentaBancariaSelect value={f.cuenta_id} contexto="recibo" label="Entró a la cuenta"
+                        {/* (24/11/2026) Solo cuentas en pesos: la caja cobra en RD$. */}
+                        <CuentaBancariaSelect value={f.cuenta_id} contexto="recibo" moneda="DOP" label="Entró a la cuenta"
                           onChange={(id) => setForma(i, 'cuenta_id', id)}
                           onSelect={(cta) => setFormas((fs) => fs.map((x, j) => (j === i ? { ...x, banco: cta?.banco || '', alias: cta?.alias || '' } : x)))} />
                         <input className={`${campo} w-full`} placeholder="Referencia / número" value={f.referencia} onChange={(e) => setForma(i, 'referencia', e.target.value)} />
