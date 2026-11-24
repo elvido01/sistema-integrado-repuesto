@@ -21,7 +21,7 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
   const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val);
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] hover:shadow-md transition-shadow">
+    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[344px] hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg shrink-0 [&>svg]:w-4 [&>svg]:h-4">

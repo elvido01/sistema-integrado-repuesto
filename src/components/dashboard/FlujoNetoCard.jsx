@@ -21,7 +21,7 @@ const MiniStat = ({ label, value, valueClass = 'text-slate-800' }) => (
 );
 
 const SkeletonCard = () => (
-  <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] animate-pulse">
+  <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[344px] animate-pulse">
     <div className="h-8 w-2/3 bg-slate-100 rounded mb-4" />
     <div className="h-10 w-1/2 bg-slate-100 rounded mb-4" />
     <div className="h-[84px] w-full bg-slate-100 rounded mb-4" />
@@ -42,7 +42,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
   // Estado de error: no se pudo calcular.
   if (!data || !data.periodo_actual) {
     return (
-      <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] items-center justify-center text-center">
+      <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[344px] items-center justify-center text-center">
         <Waves className="w-8 h-8 text-slate-300 mb-3" />
         <p className="text-sm font-semibold text-slate-500">No se pudo calcular el flujo neto.</p>
         {onRetry && (
@@ -86,7 +86,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
   const ArrowIcon = cmp.direccion === 'down' ? TrendingDown : TrendingUp;
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] hover:shadow-md transition-shadow relative">
+    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[344px] hover:shadow-md transition-shadow relative">
       {/* Encabezado */}
       <div className="flex items-start justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -204,7 +204,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
       {/* Ver desglose */}
       <button
         onClick={() => setShowDesglose(true)}
-        className="mt-auto flex items-center justify-center gap-1 w-full h-8 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
+        className="mt-auto flex items-center justify-center gap-1 w-full h-7 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
       >
         Ver desglose <ChevronRight className="w-3.5 h-3.5" />
       </button>
