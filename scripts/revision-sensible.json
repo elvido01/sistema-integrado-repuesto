@@ -355,7 +355,7 @@
     "src/pages/AciertoComprasPage.jsx": "7c3682af253a7756",
     "src/pages/AprobacionesComprasPage.jsx": "8fa4055ebf10e96f",
     "src/pages/ComprasPage.jsx": "a5b0d4604acc39a6",
-    "src/pages/Configuracion/CierreCajaPage.jsx": "95b6b2a85dcd2530",
+    "src/pages/Configuracion/CierreCajaPage.jsx": "eaa522ac828bb2a3",
     "src/pages/Configuracion/DgiiMonitorPage.jsx": "1a4368bbf78c9e1f",
     "src/pages/CuentasBancariasPage.jsx": "eb43979d505aac21",
     "src/pages/CuentasPorPagarPage.jsx": "efe77dc770754dee",
@@ -485,13 +485,6 @@
     "src/components/colegio/CuentasBancariasColegio.jsx": "48dd1033dd09db90"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: dgii_xml_builder ANECF reescrito segun Formato Anulacion e-NCF v1.0 (RncEmisor, FechaHoraAnulacioneNCF, tabla de rangos por TipoeCF, rangos que se pisan rechazados, fecha ISO a hora RD); telefono emisor ###-###-#### en el builder del Emisor. Hallazgos atendidos; printPOS margenes repetidos por hoja y tipo carta.",
-      "archivos": [
-        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: logo en hoja carta y PDF (escapado, guarda de tamaño 0), nota al pie configurable por empresa, tope 80 en descripcion+referencia (tambien catalogo/calculadora), clic derecho solo PDF en FT y Escape no cierra el panel, FT filtrado por tenant, reemision de rechazados: no anuladas/devueltas, historial de rechazos, XML se rearma, apartado 3 min; NombreItem 80 + DescripcionItem.",
@@ -1039,6 +1032,13 @@
         "src/components/bancos/CuentaBancariaSelect.jsx",
         "src/components/colegio/CuentasBancariasColegio.jsx",
         "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-24",
+      "nota": "code-review high impresion tickets: 7 hallazgos. Arreglados: aire proporcional (+4%) contra 2da pagina, espera al load del iframe (tope 15s) para no perder el logo, print neutralizado dentro del iframe (sin doble impresion), regex anclada a @page, errores de medida no impiden imprimir, cierre por printHtmlSmart (agente), escape de textos de usuario en el cierre (XSS pre-existente). Probado en Chrome: 100x73mm, 1 pagina, 1 impresion.",
+      "archivos": [
+        "src/pages/Configuracion/CierreCajaPage.jsx"
       ]
     }
   ]

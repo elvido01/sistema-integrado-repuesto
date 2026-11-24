@@ -19,6 +19,7 @@ import CuentaBancariaSelect from '@/components/bancos/CuentaBancariaSelect';
 import { Calendar as CalendarIcon, Lock, Printer, X, Loader2, Coins, Save, ChevronDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { consultarEstadoCaja } from '@/components/caja/AbrirCajaModal';
+import { printHtmlSmart, printViaBrowser } from '@/lib/printHtmlSmart';
 
 // Columnas de recibos_ingreso que usa el cierre (las de caja: varias cajas).
 // El respaldo (por created_at) pide solo las de siempre: si algo falla con
@@ -1030,13 +1031,13 @@ const CierreCajaPage = () => {
       <body onload="window.print()">
         <div class="head">
           <div>
-            <h1>${(empresa?.nombre || 'MotoFlow').toUpperCase()}</h1>
+            <h1>${escHtmlCierre((empresa?.nombre || 'MotoFlow').toUpperCase())}</h1>
             <div class="sub">CIERRE DE CAJA</div>
           </div>
           <div class="meta">
             <div><b>Fecha:</b> ${formatFechaDMY(cierre.fecha)}</div>
             <div><b>Turno:</b> ${cierre.turno}</div>
-            <div><b>Cajero:</b> ${cierre.cajero_nombre}</div>
+            <div><b>Cajero:</b> ${escHtmlCierre(cierre.cajero_nombre)}</div>
             ${cierre._reimpresion ? '<div style="color:#b45309;font-weight:bold">REIMPRESIÓN</div>' : ''}
           </div>
         </div>
@@ -1074,28 +1075,28 @@ const CierreCajaPage = () => {
             ${(resumen?.gastosDiarios || []).length ? `
             <div class="sec">Desglose de Gastos</div>
             <table><tbody>
-              ${resumen.gastosDiarios.map(g => `<tr><td>${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
+              ${resumen.gastosDiarios.map(g => `<tr><td>${escHtmlCierre(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${escHtmlCierre(g.descripcion)}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
               <tr class="bold"><td>Total Gastos</td><td class="num">${formatCurrency(resumen?.totalGastosDiarios)}</td></tr>
             </tbody></table>` : ''}
 
             ${(resumen?.pagosNomina || []).length ? `
             <div class="sec">Nómina pagada hoy (efectivo)</div>
             <table><tbody>
-              ${resumen.pagosNomina.map(g => `<tr><td>${g.descripcion || 'NÓMINA'}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
+              ${resumen.pagosNomina.map(g => `<tr><td>${escHtmlCierre(g.descripcion || 'NÓMINA')}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
               <tr class="bold"><td>Total Nómina</td><td class="num">${formatCurrency(resumen?.totalPagosNomina)}</td></tr>
             </tbody></table>` : ''}
 
             ${(resumen?.pagosTerceros || []).length ? `
             <div class="sec">Pagos a terceros (no son gastos de la empresa)</div>
             <table><tbody>
-              ${resumen.pagosTerceros.map(g => `<tr><td>${(g.concepto_tercero || 'TERCERO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
+              ${resumen.pagosTerceros.map(g => `<tr><td>${escHtmlCierre(g.concepto_tercero || 'TERCERO')}${g.descripcion ? ` — ${escHtmlCierre(g.descripcion)}` : ''}</td><td class="num">${formatCurrency(g.monto)}</td></tr>`).join('')}
               <tr class="bold"><td>Total entregado a terceros</td><td class="num">${formatCurrency(resumen?.totalPagosTerceros)}</td></tr>
             </tbody></table>` : ''}
 
             ${(resumen?.prestamosEfectivo || []).length ? `
             <div class="sec">Préstamos (Efectivo)</div>
             <table><tbody>
-              ${resumen.prestamosEfectivo.map(p => `<tr><td>${(p.clientes?.nombre || 'PRÉSTAMO')}${p.numero ? ` — ${p.numero}` : ''}</td><td class="num">${formatCurrency(p.monto_capital)}</td></tr>`).join('')}
+              ${resumen.prestamosEfectivo.map(p => `<tr><td>${escHtmlCierre(p.clientes?.nombre || 'PRÉSTAMO')}${p.numero ? ` — ${escHtmlCierre(p.numero)}` : ''}</td><td class="num">${formatCurrency(p.monto_capital)}</td></tr>`).join('')}
               <tr class="bold"><td>Total Préstamos</td><td class="num">${formatCurrency(resumen?.totalPrestamosEfectivo)}</td></tr>
             </tbody></table>` : ''}
 
@@ -1103,8 +1104,8 @@ const CierreCajaPage = () => {
             <div class="sec">Compromisos (Efectivo)</div>
             <table><tbody>
               ${resumen.compromisosEfectivo.map(c => `
-                <tr><td>${(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${c.tipo}` : ''}</td><td class="num">${formatCurrency(c.monto_efectivo !== undefined ? c.monto_efectivo : c.monto)}</td></tr>
-                ${(c.empleados || []).map(e => `<tr><td style="padding-left:14px;color:#555">· ${e.nombre}${e.yaEnGastos ? ` <i>(ya salió ${e.pagadoAt ? formatFechaDMY(e.pagadoAt) : 'antes'}, en Gastos)</i>` : ''}</td><td class="num" style="color:#555">${formatCurrency(e.monto)}</td></tr>`).join('')}
+                <tr><td>${escHtmlCierre(c.nombre || 'COMPROMISO')}${c.tipo ? ` — ${escHtmlCierre(c.tipo)}` : ''}</td><td class="num">${formatCurrency(c.monto_efectivo !== undefined ? c.monto_efectivo : c.monto)}</td></tr>
+                ${(c.empleados || []).map(e => `<tr><td style="padding-left:14px;color:#555">· ${escHtmlCierre(e.nombre)}${e.yaEnGastos ? ` <i>(ya salió ${e.pagadoAt ? formatFechaDMY(e.pagadoAt) : 'antes'}, en Gastos)</i>` : ''}</td><td class="num" style="color:#555">${formatCurrency(e.monto)}</td></tr>`).join('')}
               `).join('')}
               <tr class="bold"><td>Total Compromisos</td><td class="num">${formatCurrency(resumen?.totalCompromisosEfectivo)}</td></tr>
             </tbody></table>` : ''}
@@ -1127,7 +1128,7 @@ const CierreCajaPage = () => {
                  dólares, depósito). Va aparte para que el cuadre se vea entero. -->
             <div class="sec">Efectivo movido a cuentas (no es gasto)</div>
             <table><tbody>
-              ${resumen.efectivoMovido.map(d => `<tr><td>${d.cuenta}${d.moneda && d.moneda !== 'DOP' ? ` — US$${Number(d.monto_cuenta).toLocaleString('es-DO', { minimumFractionDigits: 2 })} a ${Number(d.tasa)}` : ''}${d.concepto ? ` · ${d.concepto}` : ''}</td><td class="num">${formatCurrency(d.monto_caja)}</td></tr>`).join('')}
+              ${resumen.efectivoMovido.map(d => `<tr><td>${escHtmlCierre(d.cuenta)}${d.moneda && d.moneda !== 'DOP' ? ` — US$${Number(d.monto_cuenta).toLocaleString('es-DO', { minimumFractionDigits: 2 })} a ${Number(d.tasa)}` : ''}${d.concepto ? ` · ${escHtmlCierre(d.concepto)}` : ''}</td><td class="num">${formatCurrency(d.monto_caja)}</td></tr>`).join('')}
             </tbody></table>
             <div class="linea-fuerte"><span>EFECTIVO MOVIDO A CUENTAS</span><span>${formatCurrency(resumen?.totalEfectivoMovido)}</span></div>` : ''}
 
@@ -1204,14 +1205,14 @@ const CierreCajaPage = () => {
       </head>
       <body onload="window.print()">
         <div class="text-center">
-          <h1 class="bold">${(empresa?.nombre || 'MotoFlow').toUpperCase()}</h1>
+          <h1 class="bold">${escHtmlCierre((empresa?.nombre || 'MotoFlow').toUpperCase())}</h1>
           <p style="margin: 2px 0; font-size: 13px;">CIERRE DE CAJA</p>
           ${cierre._reimpresion ? '<p class="bold" style="margin:2px 0;font-size:12px;">** REIMPRESION **</p>' : ''}
         </div>
         <div class="separator"></div>
         <div class="row"><span>Fecha:</span><span>${formatFechaDMY(cierre.fecha)}</span></div>
         <div class="row"><span>Turno:</span><span>${cierre.turno}</span></div>
-        <div class="row"><span>Cajero:</span><span>${cierre.cajero_nombre}</span></div>
+        <div class="row"><span>Cajero:</span><span>${escHtmlCierre(cierre.cajero_nombre)}</span></div>
         <div class="separator"></div>
         <div class="bold" style="margin-bottom: 4px;">ENTRADAS DEL DIA</div>
         ${filaPos('Ventas Contado Caja', resumen?.totalVentasContadoCaja)}
@@ -1234,7 +1235,7 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">DESGLOSE DE GASTOS</div>
         ${resumen.gastosDiarios.map(g => `
           <div class="row">
-            <span style="max-width: 70%;">${(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</span>
+            <span style="max-width: 70%;">${escHtmlCierre(g.tipo_gasto || 'GASTO')}${g.descripcion ? ` — ${escHtmlCierre(g.descripcion)}` : ''}</span>
             <span>${formatCurrency(g.monto)}</span>
           </div>`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1245,7 +1246,7 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">NOMINA PAGADA HOY</div>
         ${resumen.pagosNomina.map(g => `
           <div class="row">
-            <span style="max-width: 70%;">${g.descripcion || 'NOMINA'}</span>
+            <span style="max-width: 70%;">${escHtmlCierre(g.descripcion || 'NOMINA')}</span>
             <span>${formatCurrency(g.monto)}</span>
           </div>`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1256,7 +1257,7 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">PAGOS A TERCEROS</div>
         ${resumen.pagosTerceros.map(g => `
           <div class="row">
-            <span style="max-width: 70%;">${(g.concepto_tercero || 'TERCERO')}${g.descripcion ? ` — ${g.descripcion}` : ''}</span>
+            <span style="max-width: 70%;">${escHtmlCierre(g.concepto_tercero || 'TERCERO')}${g.descripcion ? ` — ${escHtmlCierre(g.descripcion)}` : ''}</span>
             <span>${formatCurrency(g.monto)}</span>
           </div>`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1267,7 +1268,7 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">PRÉSTAMOS (EFECTIVO)</div>
         ${resumen.prestamosEfectivo.map(p => `
           <div class="row">
-            <span style="max-width: 70%;">${(p.clientes?.nombre || p.numero || 'PRÉSTAMO')}</span>
+            <span style="max-width: 70%;">${escHtmlCierre(p.clientes?.nombre || p.numero || 'PRÉSTAMO')}</span>
             <span>${formatCurrency(p.monto_capital)}</span>
           </div>`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1278,12 +1279,12 @@ const CierreCajaPage = () => {
         <div class="bold" style="margin-bottom: 4px;">COMPROMISOS (EFECTIVO)</div>
         ${resumen.compromisosEfectivo.map(c => `
           <div class="row">
-            <span style="max-width: 70%;">${(c.nombre || 'COMPROMISO')}</span>
+            <span style="max-width: 70%;">${escHtmlCierre(c.nombre || 'COMPROMISO')}</span>
             <span>${formatCurrency(c.monto_efectivo !== undefined ? c.monto_efectivo : c.monto)}</span>
           </div>
           ${(c.empleados || []).map(e => `
           <div class="row">
-            <span style="max-width: 70%; padding-left: 8px;">· ${e.nombre}${e.yaEnGastos ? ' (en Gastos)' : ''}</span>
+            <span style="max-width: 70%; padding-left: 8px;">· ${escHtmlCierre(e.nombre)}${e.yaEnGastos ? ' (en Gastos)' : ''}</span>
             <span>${formatCurrency(e.monto)}</span>
           </div>`).join('')}`).join('')}
         <div class="row" style="border-top: 1px solid #000; padding-top: 2px; margin-top: 2px;">
@@ -1337,13 +1338,12 @@ const CierreCajaPage = () => {
       </html>
     `;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-    document.body.appendChild(iframe);
-    iframe.contentWindow.document.open();
-    iframe.contentWindow.document.write(html);
-    iframe.contentWindow.document.close();
-    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+    // (24/11/2026) Por printHtmlSmart: el agente si está activo; si no, el
+    // navegador, que mide el ticket y le da a la página ese largo. Con
+    // "80mm auto" Chrome usaba el papel del driver y salía papel en blanco
+    // hasta el corte.
+    printHtmlSmart(html, esCarta ? { tipo: 'carta' } : { tipo: 'ticket', anchoMM: 72 })
+      .catch(() => printViaBrowser(html));
   };
 
   /* ── Cierres ya grabados: historial y reimpresión ── */

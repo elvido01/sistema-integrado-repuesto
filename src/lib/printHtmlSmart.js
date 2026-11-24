@@ -29,8 +29,70 @@ export function setSilentPrintEnabled(on) {
     localStorage.setItem(PREF_KEY, on ? '1' : '0');
 }
 
+// (24/11/2026) Tickets térmicos: el largo EXACTO de la página.
+// Las plantillas piden `@page { size: 80mm auto }`, pero "ancho auto" NO es
+// un tamaño válido en CSS: Chrome descarta la regla y usa el papel del
+// driver (probado: sale una hoja CARTA de 279 mm para un ticket de 3
+// líneas). En la térmica eso es el ticket + medio metro de papel en blanco
+// hasta el corte (le pasó a la cafetería). Aquí se mide el ticket ya
+// dibujado y se le da a la página ese largo, con el ancho de la plantilla.
+// Solo dentro de una regla @page: "background-size: 40mm auto" no es un ticket.
+const TICKET_AUTO = /@page\s*\{[^}]*?\bsize:\s*([\d.]+mm)\s+auto/i;
+function imprimirTicketMedido(html, anchoPagina) {
+    const anchoMm = parseFloat(anchoPagina);
+    const iframe = document.createElement('iframe');
+    // Fuera de la pantalla pero con el ancho del papel: medido a 0 px el
+    // texto se partiría y el alto saldría falso.
+    Object.assign(iframe.style, {
+        position: 'fixed', left: '-10000px', top: '0', width: `${anchoMm}mm`, height: '10px',
+        border: '0', visibility: 'hidden',
+    });
+    iframe.setAttribute('scrolling', 'no');
+    document.body.appendChild(iframe);
+    const win = iframe.contentWindow;
+    const imprimir = win.print.bind(win);
+    // La plantilla no imprime sola (onload o script): imprime esto, ya medido.
+    win.print = () => {};
+    const doc = win.document;
+    doc.open();
+    doc.write(html.replace(/\sonload=(["'])\s*window\.print\(\)\s*;?\s*\1/i, ''));
+    doc.close();
+    try { win.print = () => {}; } catch (_) { /* noop */ }
+    const quitar = () => setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+    let hecho = false;
+    const lanzar = () => {
+        if (hecho) return;
+        hecho = true;
+        try {
+            const px = Math.max(doc.documentElement.scrollHeight, doc.body ? doc.body.scrollHeight : 0);
+            // 96 px = 1 pulgada = 25.4 mm. Aire proporcional (+4 %) y 6 mm fijos:
+            // al imprimir la letra puede partir distinto y un ticket largo crecer
+            // unos milímetros; sin ese aire saldría una 2.ª página en blanco.
+            const mm = (px * 25.4) / 96;
+            const altoMm = Math.ceil(mm * 1.04) + 6;
+            const st = doc.createElement('style');
+            st.textContent = `@page { size: ${anchoMm}mm ${altoMm}mm; margin: 0; } html { overflow: hidden; }`;
+            (doc.head || doc.documentElement).appendChild(st);
+        } catch (err) {
+            console.warn('[printHtmlSmart] no se pudo medir el ticket, imprimo igual:', err?.message || err);
+        }
+        try { win.focus(); imprimir(); } catch (err) { console.warn('[printHtmlSmart] print falló:', err?.message || err); }
+        quitar();
+    };
+    // Se mide cuando TODO cargó (logo, QR, fuentes): el alto cambia al aparecer.
+    // Tope largo (15 s) solo para no quedarse esperando para siempre.
+    if (doc.readyState === 'complete' && Array.from(doc.images || []).every((i) => i.complete)) {
+        setTimeout(lanzar, 250);
+    } else {
+        win.addEventListener('load', () => setTimeout(lanzar, 100));
+        setTimeout(lanzar, 15000);
+    }
+}
+
 // Fallback histórico: iframe oculto + window.print() (lo que se hacía siempre)
 export function printViaBrowser(html) {
+    const ticket = TICKET_AUTO.exec(html || '');
+    if (ticket) { imprimirTicketMedido(html, ticket[1]); return; }
     const iframe = document.createElement('iframe');
     Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
     document.body.appendChild(iframe);
