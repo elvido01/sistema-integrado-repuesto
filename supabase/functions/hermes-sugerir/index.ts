@@ -88,6 +88,13 @@ Deno.serve(async (req: Request) => {
       .select('nombre, direccion1, direccion, telefono').limit(1).maybeSingle();
     ctx.tienda = tienda || null;
 
+    // (24/11/2026) Reglas aprobadas por el dueño (hermes_lecciones, RLS por
+    // empresa). Si falla la lectura, Hermes contesta igual sin ellas.
+    const { data: lecc } = await supabase.from('hermes_lecciones')
+      .select('texto').eq('estado', 'aprobada')
+      .order('veces', { ascending: false }).order('creado_en', { ascending: true }).limit(25);
+    ctx.lecciones = (lecc || []).map((l: any) => String(l.texto || '').trim()).filter(Boolean);
+
     // (23/10/2026) Lo que el dueño CAMBIÓ de las sugerencias: el mejor
     // maestro que hay. Antes → después, las 8 más recientes.
     const { data: corr } = await supabase.from('sales_ai_training_logs')
@@ -275,6 +282,15 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
       '',
       `DATOS DE LA TIENDA: ${[ctx.tienda.nombre, ctx.tienda.direccion1 || ctx.tienda.direccion, ctx.tienda.telefono ? `tel. ${ctx.tienda.telefono}` : null].filter(Boolean).join(' · ')}.`,
     ] : []),
+    // (24/11/2026) Lo que el dueño aprobó en "Lo que aprende Hermes" (Sales
+    // Hub): lecciones del juez del modo sombra o reglas que escribió él.
+    // Mandan sobre los ejemplos; las reglas 1, 4 y 5 (no inventar precios ni
+    // existencias) siguen por encima de todo.
+    ...(Array.isArray(ctx.lecciones) && ctx.lecciones.length ? [
+      '',
+      'REGLAS DE LA CASA (las aprobo el dueño; cumplelas siempre):',
+      ...ctx.lecciones.map((t: string) => `- ${t}`),
+    ] : []),
     ...(fotos.length ? [
       '11. EL CLIENTE MANDO UNA FOTO y la estas viendo. Mirala y di QUE PIEZA es',
       '   antes de preguntar nada: para eso la mando, porque no sabe como se',
@@ -295,7 +311,8 @@ async function redactar(ctx: any, apiKey: string, mcpUrl: string, token: string)
     .map((c: any) => `Cliente: ${String(c.customer_message || '').slice(0, 160)}\nTu sugerencia: ${String(c.bot_reply).slice(0, 220)}\nEl dueño lo cambio a: ${String(c.human_reply).slice(0, 220)}`)
     .join('\n\n');
   const encargo = [
-    ejemplos ? `ASI CONTESTA LA CASA (copia el tono, no el contenido):\n\n${ejemplos}\n` : '',
+    // (24/11/2026) Ya no son al azar: son las preguntas más PARECIDAS a esta.
+    ejemplos ? `ASI CONTESTO LA CASA PREGUNTAS PARECIDAS (copia el tono y la forma de contestar; los precios y existencias de aqui son viejos: sacalos SOLO de las herramientas):\n\n${ejemplos}\n` : '',
     correcciones ? `ASI CORRIGE EL DUEÑO TUS SUGERENCIAS. Aprende QUE quita, QUE agrega y COMO lo dice; no repitas lo que el borra:\n\n${correcciones}\n` : '',
     historial ? `CONVERSACION HASTA AHORA:\n${historial}\n` : '',
     `LA PREGUNTA A CONTESTAR:\n${ctx.pregunta}\n`,

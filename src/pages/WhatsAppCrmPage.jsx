@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff, PlusCircle, Trash2, Share2, Image as ImageIcon, PackagePlus, Mic, Square, Volume2, VolumeX, ChevronUp, ChevronDown, Clock3, CreditCard, Ban, ShoppingCart, AlertTriangle, CalendarClock, CheckCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, MoreVertical, Edit3, Instagram, Facebook, Inbox, UserPlus, Handshake, MapPin, Sparkles, Flame } from 'lucide-react';
+import { MessageCircle, Search, Send, Bot, UserRound, Loader2, FileText, RefreshCw, Power, PowerOff, CheckCircle2, QrCode, Smartphone, X, Wifi, WifiOff, PlusCircle, Trash2, Share2, Image as ImageIcon, PackagePlus, Mic, Square, Volume2, VolumeX, ChevronUp, ChevronDown, Clock3, CreditCard, Ban, ShoppingCart, AlertTriangle, CalendarClock, CheckCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, MoreVertical, Edit3, Instagram, Facebook, Inbox, UserPlus, Handshake, MapPin, Sparkles, Flame, GraduationCap } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { invocarConSesion } from '@/lib/edgeInvoke';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import NewManualConversationModal from '@/components/whatsapp/NewManualConversationModal';
 import EmbudoCrm from '@/components/whatsapp/EmbudoCrm';
+import LeccionesHermes from '@/components/whatsapp/LeccionesHermes';
 import { Label } from '@/components/ui/label';
 import ProductSearchModal from '@/components/ventas/ProductSearchModal';
 import { useWhatsAppNotifications } from '@/contexts/WhatsAppNotificationContext';
@@ -357,6 +358,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
   const [showNewManualConv, setShowNewManualConv] = useState(false);
   const [selected, setSelected] = useState(null);
   const [embudoOpen, setEmbudoOpen] = useState(false);
+  const [leccionesOpen, setLeccionesOpen] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [savingRename, setSavingRename] = useState(false);
@@ -2121,6 +2123,7 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
       <Helmet>
         <title>Sales Hub - MotoFlow</title>
       </Helmet>
+      <LeccionesHermes open={leccionesOpen} onOpenChange={setLeccionesOpen} />
       <EmbudoCrm
         open={embudoOpen}
         onOpenChange={setEmbudoOpen}
@@ -2155,6 +2158,9 @@ const WhatsAppCrmPage = ({ extraData } = {}) => {
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="icon" onClick={() => setEmbudoOpen(true)} title="Embudo de ventas (Hermes clasifica cada conversación)">
                     <Flame className="h-4 w-4 text-amber-500" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setLeccionesOpen(true)} title="Lo que aprende Hermes (aprobar lecciones)">
+                    <GraduationCap className="h-4 w-4 text-violet-600" />
                   </Button>
                   <Button variant="ghost" size="icon" onClick={() => setIsStartChatOpen(true)} title="Iniciar chat">
                     <PlusCircle className="h-4 w-4" />
