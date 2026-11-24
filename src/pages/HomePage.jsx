@@ -11,6 +11,7 @@ import CommitmentsCard from '@/components/dashboard/CommitmentsCard';
 import SupplierCommitmentsCard from '@/components/dashboard/SupplierCommitmentsCard';
 import CommitmentFormModal from '@/components/dashboard/CommitmentFormModal';
 import DailyExpensesCard from '@/components/dashboard/DailyExpensesCard';
+import PromesasCard from '@/components/dashboard/PromesasCard';
 import DailyExpenseModal from '@/components/dashboard/DailyExpenseModal';
 import PayCommitmentModal from '@/components/dashboard/PayCommitmentModal';
 import PaySupplierCommitmentModal from '@/components/dashboard/PaySupplierCommitmentModal';
@@ -737,6 +738,8 @@ const HomePage = () => {
                 </motion.div>}
 
                 {/* 1. ANÁLISIS PROFUNDO Y ESTRATÉGICO (Grid Principal de 3) */}
+                {/* 23/11/2026: promesas a clientes ("Le prometí…") */}
+                <PromesasCard />
                 {/* 23/11/2026: columnas por espacio real (auto-fit), no por ancho de ventana: con el menú abierto a ~1500 px las 4 tarjetas se montaban. */}
                 <motion.div 
                   initial={{ y: 20, opacity: 0 }}

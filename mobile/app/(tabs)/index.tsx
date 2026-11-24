@@ -14,6 +14,7 @@ import { fetchSanDashboard, suscribirSan, SanDashboard, SAN_VACIO } from '@/src/
 import { fetchCuentasBanco, totalCuentas, CuentaBanco } from '@/src/services/cuentasService';
 import VentanasInicio from '@/src/components/ventanas/VentanasInicio';
 import PrimerosPasosInicio from '@/src/components/PrimerosPasosInicio';
+import PromesasInicio from '@/src/components/PromesasInicio';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -633,6 +634,9 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* (23/11/2026) "Le prometí…": promesas a clientes con aviso el día que toca. */}
+      <PromesasInicio />
 
       {/* Ventanas y aluminio: crear proyecto por sistema, accesos y recientes (solo tipo 'aluminio'). */}
       <VentanasInicio />
