@@ -737,11 +737,12 @@ const HomePage = () => {
                 </motion.div>}
 
                 {/* 1. ANÁLISIS PROFUNDO Y ESTRATÉGICO (Grid Principal de 3) */}
+                {/* 23/11/2026: columnas por espacio real (auto-fit), no por ancho de ventana: con el menú abierto a ~1500 px las 4 tarjetas se montaban. */}
                 <motion.div 
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.3, duration: 0.4 }}
-                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4"
                 >
                   {verTarjeta('dash-compromisos') && <CommitmentsCard
                     compromisos={finanzas.compromisos}
@@ -784,7 +785,7 @@ const HomePage = () => {
                   initial={{ y: 30, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.6, duration: 0.4 }}
-                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 pt-6 border-t border-gray-200"
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-4 lg:gap-6 pt-6 border-t border-gray-200"
                 >
                   <SummaryCard
                     title="Ventas del Día"
