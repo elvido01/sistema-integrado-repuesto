@@ -17,23 +17,20 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
   const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val);
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-2 bg-amber-50 text-amber-600 rounded-lg shrink-0">
+          <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg shrink-0 [&>svg]:w-4 [&>svg]:h-4">
             <Truck className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider leading-tight">Compromisos Suplidores</h3>
-            <p className="text-xl font-bold text-gray-900 leading-tight">{formatCurrency(totalCommitments)}</p>
+            <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide leading-tight truncate" title="Compromisos con suplidores que vencen esta semana o ya vencieron">Suplidores · semana</h3>
+            <p className="text-lg font-bold text-gray-900 leading-tight whitespace-nowrap">{formatCurrency(totalCommitments)}</p>
           </div>
-        </div>
-        <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full uppercase shrink-0">
-          Semanal
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto pr-2 mb-4 space-y-3 custom-scrollbar">
+      <div className="flex-1 overflow-auto pr-1 mb-2 space-y-2 custom-scrollbar">
         {commitments.length > 0 ? (
           commitments.map((c, i) => (
             <div key={i} className="pb-2 border-b border-gray-50 last:border-0 last:pb-0 group">
@@ -67,7 +64,7 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
                   )}
                 </div>
                 <span className={`text-right shrink-0 ${c.isOverdue ? 'text-red-600' : 'text-slate-800'}`}>
-                  <span className="text-sm font-black whitespace-nowrap block">{formatCurrency(c.monto_pendiente)}</span>
+                  <span className="text-xs font-black whitespace-nowrap block">{formatCurrency(c.monto_pendiente)}</span>
                   {/* La deuda en US$ vive en dólares: se muestra para que se vea
                       que los pesos salen de la tasa de hoy, no de la factura. */}
                   {c.moneda === 'USD' && c.pendiente_usd != null && (
@@ -84,18 +81,18 @@ const SupplierCommitmentsCard = ({ commitments = [], caja = 0, customTotal = nul
         )}
       </div>
 
-      <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between shrink-0">
+      <div className="mt-auto pt-2 border-t border-gray-100 flex items-center justify-between shrink-0">
          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Caja vs Deuda Suplidor (Semanal)</span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Caja vs suplidores</span>
             {effectiveDebt === 0 && !hasNegativeCash ? (
-               <span className="text-sm font-black text-emerald-600">Libre de pagos</span>
+               <span className="text-xs font-black text-emerald-600">Libre de pagos</span>
             ) : (
-               <span className={`text-sm font-black ${balanceIsShort ? 'text-rose-600' : 'text-emerald-600'}`}>
+               <span className={`text-xs font-black whitespace-nowrap ${balanceIsShort ? 'text-rose-600' : 'text-emerald-600'}`}>
                  {formatCurrency(balanceAmount)} {balanceLabel}
                </span>
             )}
          </div>
-         <button className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
+         <button className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
             <ArrowRight className="w-4 h-4" />
          </button>
       </div>

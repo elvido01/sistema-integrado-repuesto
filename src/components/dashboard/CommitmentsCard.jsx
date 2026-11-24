@@ -21,25 +21,25 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
   const formatCurrency = (val) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(val);
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-3 mb-4 shrink-0">
+    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+          <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg shrink-0 [&>svg]:w-4 [&>svg]:h-4">
             <Wallet className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider leading-tight">Compromisos a Pagar</h3>
-            <p className="text-xl font-bold text-gray-900 leading-tight">{formatCurrency(totalCompromisos)}</p>
+            <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide leading-tight truncate" title="Compromisos a pagar">Compromisos</h3>
+            <p className="text-lg font-bold text-gray-900 leading-tight whitespace-nowrap">{formatCurrency(totalCompromisos)}</p>
           </div>
         </div>
         {onAdd && (
-          <Button variant="outline" size="sm" onClick={onAdd} className="h-8 bg-white border-indigo-100 text-indigo-700 hover:bg-indigo-50 shrink-0 px-3">
-            <Plus className="w-4 h-4 mr-1" /> Nuevo
+          <Button variant="outline" size="sm" onClick={onAdd} title="Nuevo" aria-label="Nuevo" className="h-7 w-7 p-0 bg-white border-indigo-100 text-indigo-700 hover:bg-indigo-50 shrink-0">
+            <Plus className="w-4 h-4" />
           </Button>
         )}
       </div>
 
-      <div className="flex-1 overflow-auto pr-2 mb-4 space-y-3">
+      <div className="flex-1 overflow-auto pr-1 mb-2 space-y-2">
         {compromisosOrdenados.length > 0 ? (
           compromisosOrdenados.map((c, i) => {
             const dateStr = c.fecha ? c.fecha.split('T')[0] : '';
@@ -54,7 +54,7 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
               {/* Línea 1: descripción a ancho completo */}
               <div className="flex items-center gap-2 min-w-0">
                 <CreditCard className={`w-4 h-4 shrink-0 ${isOverdue ? 'text-red-400' : 'text-gray-400'} group-hover:${isOverdue ? 'text-red-500' : 'text-indigo-500'} transition-colors`} />
-                <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-gray-700'} truncate uppercase flex-1`} title={c.nombre}>{c.nombre}</span>
+                <span className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-gray-700'} truncate uppercase flex-1`} title={c.nombre}>{c.nombre}</span>
               </div>
               {/* Línea 2: fecha + monto */}
               <div className="flex items-center justify-between gap-2 mt-0.5 pl-6">
@@ -62,7 +62,7 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
                   {dateStr ? format(date, 'dd/MM/yy') : ''}
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className={`text-sm font-bold ${isOverdue ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(c.monto)}</span>
+                  <span className={`text-xs font-bold whitespace-nowrap ${isOverdue ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(c.monto)}</span>
                   {onEdit && (
                     <button onClick={() => onEdit(c)} className="p-1 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100">
                       <Edit2 className="w-3.5 h-3.5" />
@@ -107,19 +107,19 @@ const CommitmentsCard = ({ compromisos = [], caja = 0, excedente = caja, onAdd, 
         )}
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 shrink-0">
-        <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Caja Actual</p>
-          <p className="text-sm font-bold text-gray-800">{formatCurrency(caja)}</p>
+      <div className="mt-auto grid grid-cols-2 gap-2 pt-2 border-t border-gray-100 shrink-0">
+        <div className="bg-gray-50 rounded-lg px-2 py-1 border border-gray-100">
+          <p className="text-[9px] text-gray-500 font-medium uppercase tracking-wide">Caja</p>
+          <p className="text-xs font-bold text-gray-800 whitespace-nowrap">{formatCurrency(caja)}</p>
         </div>
-        <div className={`rounded-lg p-2 border ${balanceIsShort ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
-          <p className="text-[10px] font-medium uppercase tracking-wide flex items-center justify-between">
+        <div className={`rounded-lg px-2 py-1 border ${balanceIsShort ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
+          <p className="text-[9px] font-medium uppercase tracking-wide flex items-center justify-between">
             <span className={balanceIsShort ? 'text-red-600' : 'text-green-600'}>
               {balanceLabel}
             </span>
             <ArrowRight className={`w-3.5 h-3.5 ${balanceIsShort ? 'text-red-400' : 'text-green-400'}`} />
           </p>
-          <p className={`text-sm font-bold ${balanceIsShort ? 'text-red-700' : 'text-green-700'}`}>
+          <p className={`text-xs font-bold whitespace-nowrap ${balanceIsShort ? 'text-red-700' : 'text-green-700'}`}>
             {formatCurrency(balanceAmount)}
           </p>
         </div>

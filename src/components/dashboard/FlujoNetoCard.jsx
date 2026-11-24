@@ -21,7 +21,7 @@ const MiniStat = ({ label, value, valueClass = 'text-slate-800' }) => (
 );
 
 const SkeletonCard = () => (
-  <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] animate-pulse">
+  <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] animate-pulse">
     <div className="h-8 w-2/3 bg-slate-100 rounded mb-4" />
     <div className="h-10 w-1/2 bg-slate-100 rounded mb-4" />
     <div className="h-[84px] w-full bg-slate-100 rounded mb-4" />
@@ -42,7 +42,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
   // Estado de error: no se pudo calcular.
   if (!data || !data.periodo_actual) {
     return (
-      <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] items-center justify-center text-center">
+      <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] items-center justify-center text-center">
         <Waves className="w-8 h-8 text-slate-300 mb-3" />
         <p className="text-sm font-semibold text-slate-500">No se pudo calcular el flujo neto.</p>
         {onRetry && (
@@ -86,16 +86,16 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
   const ArrowIcon = cmp.direccion === 'down' ? TrendingDown : TrendingUp;
 
   return (
-    <div className="bg-white border rounded-xl shadow-sm p-4 flex flex-col h-[374px] hover:shadow-md transition-shadow relative">
+    <div className="bg-white border rounded-xl shadow-sm p-3 flex flex-col h-[330px] hover:shadow-md transition-shadow relative">
       {/* Encabezado */}
       <div className="flex items-start justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
-            <Waves className="w-5 h-5" />
+          <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+            <Waves className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Flujo neto del mes</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Flujo del mes</p>
               <TooltipProvider delayDuration={150}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -107,7 +107,7 @@ const FlujoNetoCard = ({ data, loading = false, onRetry, ventasMesTotal = null, 
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <p className={`text-xl font-black leading-tight ${flujoColor}`}>
+            <p className={`text-lg font-black leading-tight whitespace-nowrap ${flujoColor}`}>
               {flujo < 0 ? '-' : ''}{formatCurrencyDOP(Math.abs(flujo), { decimals: 0 })}
             </p>
           </div>
