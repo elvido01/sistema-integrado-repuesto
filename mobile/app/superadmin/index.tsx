@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Alert, Modal, ScrollView, FlatList,
-  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Linking,
+  ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform, Linking, Share, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,8 +9,8 @@ import { ArrowLeft, ShieldCheck, Search, X, Receipt, Building2, CheckCircle2, XC
 import { useAuthStore } from '@/src/store/useAuthStore';
 import {
   fetchEmpresasAdmin, fetchPlanes, fetchPagosPendientes, aprobarPago, rechazarPago,
-  registrarPago, cambiarPlan, extenderSuscripcion, activarEmpresa, suspenderEmpresa, enlaceComprobante,
-  type EmpresaAdmin, type Plan, type PagoPendiente, type RegistrarPagoInput,
+  registrarPago, prepararFactura, emitirFactura, textoFactura, precioSugerido, cambiarPlan, extenderSuscripcion, activarEmpresa, suspenderEmpresa, enlaceComprobante,
+  type EmpresaAdmin, type Plan, type PagoPendiente, type RegistrarPagoInput, type FacturaPrep,
 } from '@/src/services/superadminService';
 
 // (23/11/2026) Panel de super administrador en la app: revisar los pagos que
@@ -311,6 +311,25 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
   const [referencia, setReferencia] = useState('');
   const [dias, setDias] = useState('');
   const [trabajando, setTrabajando] = useState(false);
+  // (24/11/2026) Factura de MotoFlow junto con el pago.
+  const [prep, setPrep] = useState<FacturaPrep | null>(null);
+  const [facturar, setFacturar] = useState(true);
+  const [ncf, setNcf] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [itbis, setItbis] = useState(false);
+  const [guardarEspecial, setGuardarEspecial] = useState(false);
+  const [usarLista, setUsarLista] = useState(false);
+
+  useEffect(() => {
+    if (!empresa) return;
+    setPrep(null); setNcf(''); setMotivo(''); setGuardarEspecial(false); setFacturar(true); setUsarLista(false);
+    let vivo = true;
+    prepararFactura(empresa.id).then((d) => {
+      if (!vivo) return;
+      setPrep(d); setItbis(!!d.emisor?.itbis_por_defecto);
+    }).catch(() => { if (vivo) setFacturar(false); });
+    return () => { vivo = false; };
+  }, [empresa?.id]);
 
   useEffect(() => {
     if (!empresa) return;
@@ -320,7 +339,14 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
   }, [empresa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const precio = pagables.find((p) => p.nombre.toUpperCase() === plan)?.precio || 0;
-  useEffect(() => { if (!montoTocado) setMonto(String(precio * meses)); }, [precio, meses, montoTocado]);
+  // Precio recordado/pactado de ESE plan (familia/amigos); la lista sigue siendo la del plan.
+  // usarLista: tocaron "Precio del plan" → se recalcula con la lista al cambiar plan o meses.
+  const sug = usarLista ? null : precioSugerido(prep, plan);
+  const mensual = sug ? sug.precio : precio;
+  const motivoSug = sug ? sug.motivo : '';
+  useEffect(() => { if (!montoTocado) setMonto(String(Math.round(mensual * meses * 100) / 100)); }, [mensual, meses, montoTocado]);
+  useEffect(() => { setMotivo(motivoSug); }, [motivoSug, plan]);
+  const sinEmisor = !!prep && (!prep.emisor?.nombre || !prep.emisor?.documento);
 
   if (!empresa) return null;
   const est = estadoDe(empresa);
@@ -341,9 +367,30 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
     const m = leerMonto(monto);
     if (!plan) return Alert.alert('Falta el plan', 'Escoge el plan que pagó.');
     if (!(m > 0)) return Alert.alert('Monto', 'Escribe el monto recibido (mayor que cero). Si es cortesía, usa «Dar días».');
-    Alert.alert('Registrar pago', `${empresa.nombre}\n${plan} · ${meses} ${meses === 1 ? 'mes' : 'meses'} · ${money(m)} (${metodo})`, [
+    const lista = precio * meses;
+    if (facturar) {
+      if (sinEmisor) return Alert.alert('Faltan tus datos', 'Guarda tu nombre y cédula en la web: Super Admin → Facturas MotoFlow → Mis datos de emisor.');
+      if (m < lista && !motivo.trim()) return Alert.alert('Motivo', 'Escribe el motivo del precio especial (sale en la factura).');
+    }
+    const desc = facturar && m < lista ? `\nDescuento ${money(lista - m)}: ${motivo.trim()}` : '';
+    Alert.alert(facturar ? 'Cobrar y facturar' : 'Registrar pago', `${empresa.nombre}\n${plan} · ${meses} ${meses === 1 ? 'mes' : 'meses'} · ${money(m)} (${metodo})${desc}`, [
       { text: 'Cancelar', style: 'cancel' },
-      {
+      facturar ? {
+        text: 'Emitir', onPress: async () => {
+          setTrabajando(true);
+          try {
+            const f = await emitirFactura({ tenantId: empresa.id, plan, meses, monto: m, metodo, referencia: referencia.trim(),
+              motivo: m < lista ? motivo.trim() : '', ncf: ncf.trim(), itbis, guardarEspecial });
+            onCambio();
+            Alert.alert(`Factura ${f.numero_txt}`, `Pago registrado. ${f.plan_nombre} activo hasta ${fecha(f.periodo_hasta)}.`, [
+              { text: 'Cerrar' },
+              { text: 'Compartir', onPress: () => { Share.share({ message: textoFactura(f) }).catch(() => {}); } },
+            ]);
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'No se pudo.');
+          } finally { setTrabajando(false); }
+        },
+      } : {
         text: 'Registrar', onPress: () => hacer(
           () => registrarPago({ tenantId: empresa.id, plan, meses, monto: m, metodo, referencia: referencia.trim() }),
           (r) => `Pago registrado. ${r?.plan || plan} activo hasta ${fecha(r?.fecha_fin)}.`,
@@ -377,7 +424,7 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
 
           {/* Registrar pago */}
           <View className="bg-white border border-gray-200 rounded-xl p-4 mb-3">
-            <Text className="font-black text-gray-900 mb-1">Registrar pago</Text>
+            <Text className="font-black text-gray-900 mb-1">Cobrar membresía</Text>
             <Text className="text-xs text-gray-500 mb-3">Efectivo o transferencia que el cliente no subió. Si paga antes de vencer, los días que le quedaban se suman.</Text>
             <Text className="text-[11px] font-bold text-gray-600 mb-1">PLAN</Text>
             <View className="flex-row flex-wrap">
@@ -394,8 +441,8 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
             <Text className="text-[11px] font-bold text-gray-600 mt-2 mb-1">MONTO RECIBIDO (RD$)</Text>
             <TextInput value={monto} onChangeText={(v) => { setMonto(v); setMontoTocado(true); }} keyboardType="decimal-pad"
               className="border border-gray-300 rounded-lg px-3 py-2 text-base font-bold text-gray-900" />
-            {montoTocado && leerMonto(monto) !== precio * meses && (
-              <TouchableOpacity onPress={() => setMontoTocado(false)}>
+            {(montoTocado || sug) && leerMonto(monto) !== precio * meses && (
+              <TouchableOpacity onPress={() => { setUsarLista(true); setMontoTocado(false); }}>
                 <Text className="text-xs text-violet-700 mt-1">Precio del plan: {money(precio * meses)} (tocar para usarlo)</Text>
               </TouchableOpacity>
             )}
@@ -405,8 +452,36 @@ function EmpresaModal({ empresa, planes, onClose, onCambio }: {
             </View>
             <TextInput value={referencia} onChangeText={setReferencia} placeholder="Referencia o nota (opcional)"
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mt-1" placeholderTextColor="#9ca3af" />
+            {sug && (
+              <Text className="text-xs text-blue-700 mt-2">{sug.origen === 'recordado' ? 'Precio que le diste antes' : 'Precio pactado'}: {money(sug.precio)} al mes{sug.motivo ? ` (${sug.motivo})` : ''}</Text>
+            )}
+            <View className="flex-row items-center justify-between mt-3">
+              <Text className="font-bold text-gray-900">Emitir factura de MotoFlow</Text>
+              <Switch value={facturar} onValueChange={setFacturar} />
+            </View>
+            {facturar && sinEmisor && (
+              <Text className="text-xs text-red-600 mt-1">Faltan tus datos de emisor: guárdalos en la web (Super Admin → Facturas MotoFlow).</Text>
+            )}
+            {facturar && !sinEmisor && (
+              <View className="mt-1">
+                {leerMonto(monto) < precio * meses && (
+                  <TextInput value={motivo} onChangeText={setMotivo} placeholder={`Motivo del descuento de ${money(precio * meses - (leerMonto(monto) || 0))} (familia, amigo…)`}
+                    className="border border-amber-400 rounded-lg px-3 py-2 text-sm text-gray-900 mt-1" placeholderTextColor="#9ca3af" />
+                )}
+                <TextInput value={ncf} onChangeText={(v) => setNcf(v.toUpperCase())} placeholder="NCF (opcional)" autoCapitalize="characters"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mt-2" placeholderTextColor="#9ca3af" />
+                <View className="flex-row items-center justify-between mt-2">
+                  <Text className="text-sm text-gray-700">ITBIS 18% incluido</Text>
+                  <Switch value={itbis} onValueChange={setItbis} />
+                </View>
+                <View className="flex-row items-center justify-between mt-1">
+                  <Text className="text-sm text-gray-700 flex-1 mr-2">Recordar {money((leerMonto(monto) || 0) / meses)} al mes en {plan} (solo para facturar)</Text>
+                  <Switch value={guardarEspecial} onValueChange={setGuardarEspecial} />
+                </View>
+              </View>
+            )}
             <TouchableOpacity onPress={registrar} disabled={trabajando} className="mt-3 py-3 rounded-lg bg-emerald-600 items-center">
-              {trabajando ? <ActivityIndicator color="#fff" /> : <Text className="font-black text-white">Registrar pago</Text>}
+              {trabajando ? <ActivityIndicator color="#fff" /> : <Text className="font-black text-white">{facturar ? 'Cobrar y facturar' : 'Registrar pago'}</Text>}
             </TouchableOpacity>
           </View>
 

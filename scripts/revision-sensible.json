@@ -473,19 +473,14 @@
     "sql/admin_registrar_pago_membresia.sql": "4f45afa70724ceea",
     "sql/inventario_verificaciones.sql": "2ba706aaf6e67b24",
     "sql/inventario_verificaciones_ajustes.sql": "8d4f1efdfd499563",
-    "src/components/inventario/SinMovimientoPanel.jsx": "fd2508652ae4c7f1"
+    "src/components/inventario/SinMovimientoPanel.jsx": "fd2508652ae4c7f1",
+    "sql/motoflow_facturas.sql": "4c23ead5088a028d",
+    "sql/motoflow_facturas_ajustes.sql": "5e64ae21adf3911f",
+    "src/components/admin/AdminFacturasMotoflow.jsx": "abd030a121b470e1",
+    "src/components/admin/FacturarMembresiaDialog.jsx": "989560eb1dd4a63f",
+    "src/lib/facturaMotoflow.js": "1ff37bc9b3bfbe65"
   },
   "historial": [
-    {
-      "fecha": "2026-11-10",
-      "nota": "code-review high: 9 hallazgos; arreglados 6 (F10 pregunta antes de grabar consumo a un cliente credito fiscal con RNC invalido, la ficha avisa y no bloquea editar clientes viejos, mensaje de todo ceros, mensaje sin decir consumo para NCF papel, VentasPage usa docFiscalValido, archivos nuevos en el commit). Quedan: refresco del aviso sin volver a escoger el cliente; regla copiada del builder (igual criterio, con prueba)",
-      "archivos": [
-        "src/components/ventas/VentasHeader.jsx",
-        "src/hooks/useVentas.js",
-        "src/lib/docFiscal.js",
-        "src/pages/VentasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: 10 hallazgos; arreglados 8 (cuenta bancaria de tarjeta/transferencia resuelta antes de grabar y el cobro espera a que este puesta, pantalla tactil por portal encima del menu lateral con dialogos encima, contado sin pagos partidos viejos y espera a paymentType contado, precio por nivel del cliente compartiendo armarLinea con la fila amarilla, se esconde sin desmontarse al cambiar de panel, recibido con un solo punto, F3/F10 apagados con la tactil abierta y aviso sin decir F10, archivos nuevos en el commit). Quedan: menos en cantidades fraccionarias borra la linea (cafeteria vende unidades)",
@@ -1031,6 +1026,17 @@
         "sql/inventario_verificaciones_ajustes.sql",
         "src/components/inventario/SinMovimientoPanel.jsx",
         "src/pages/InventarioInteligentePage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-24",
+      "nota": "code-review high: 9 hallazgos (5 importantes) corregidos: precio especial ya no toca tenants (tabla motoflow_precios_cliente), sugerencia por plan, sin 'Pagado por' si no se cobra, total no se borra al guardar emisor, lista en app recalcula, motivo solo con descuento, mes local, cliente en blanco, texto compartido",
+      "archivos": [
+        "sql/motoflow_facturas.sql",
+        "sql/motoflow_facturas_ajustes.sql",
+        "src/components/admin/AdminFacturasMotoflow.jsx",
+        "src/components/admin/FacturarMembresiaDialog.jsx",
+        "src/lib/facturaMotoflow.js"
       ]
     }
   ]

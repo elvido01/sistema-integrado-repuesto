@@ -12,13 +12,15 @@ import AdminEmpresaDetalle from './AdminEmpresaDetalle';
 import AdminPagosReview from '@/components/suscripcion/AdminPagosReview';
 import AdminCuentasBancarias from '@/components/suscripcion/AdminCuentasBancarias';
 import AdminEmpresasVacias from '@/components/admin/AdminEmpresasVacias';
+import AdminFacturasMotoflow from '@/components/admin/AdminFacturasMotoflow';
+import FacturarMembresiaDialog from '@/components/admin/FacturarMembresiaDialog';
 import { invocarConSesion } from '@/lib/edgeInvoke';
 import { usePanels } from '@/contexts/PanelContext';
 import {
   Shield, Loader2, Building2, Calendar, Zap, RefreshCw, Users, Activity,
   DollarSign, TrendingUp, Eye, Power, PowerOff, Clock, ArrowUpRight,
   Package, CreditCard, Search, ChevronDown, ChevronUp, Plus, Link, Copy, Check,
-  BellRing, AlertTriangle, MailCheck, Target
+  BellRing, AlertTriangle, MailCheck, Target, Receipt
 } from 'lucide-react';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -71,6 +73,9 @@ const AdminDashboard = () => {
 
   // Modal state
   const [selectedTenantId, setSelectedTenantId] = useState(null);
+  // (24/11/2026) Facturar la membresía de MotoFlow a una empresa.
+  const [facturarA, setFacturarA] = useState(null);
+  const [facturasVersion, setFacturasVersion] = useState(0);
   const [extendDays, setExtendDays] = useState({});
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -548,6 +553,9 @@ const AdminDashboard = () => {
               {/* ── PAGOS PENDIENTES ── */}
               <AdminPagosReview onChanged={fetchAll} />
 
+              {/* ── FACTURAS MOTOFLOW ── */}
+              <AdminFacturasMotoflow recargar={facturasVersion} />
+
               {/* ── CUENTAS BANCARIAS ── */}
               <AdminCuentasBancarias />
 
@@ -719,6 +727,16 @@ const AdminDashboard = () => {
                                 >
                                   <Eye className="w-3.5 h-3.5" />
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50"
+                                  onClick={() => setFacturarA({ id: tenant.id, nombre: tenant.nombre })}
+                                  title="Facturar membresía"
+                                  disabled={isUpdating}
+                                >
+                                  <Receipt className="w-3.5 h-3.5" />
+                                </Button>
                                 {correosPendientes.some((p) => (p.tenant_ids || []).includes(tenant.id)) && (
                                   <Button
                                     variant="ghost"
@@ -778,6 +796,14 @@ const AdminDashboard = () => {
           )}
         </div>
       </motion.div>
+
+      {facturarA && (
+        <FacturarMembresiaDialog
+          tenant={facturarA}
+          onClose={() => setFacturarA(null)}
+          onEmitida={() => { setFacturasVersion((v) => v + 1); fetchAll(); }}
+        />
+      )}
 
       {/* Modal de detalle */}
       {selectedTenantId && (

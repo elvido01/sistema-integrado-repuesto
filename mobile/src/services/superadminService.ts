@@ -124,3 +124,68 @@ export async function enlaceComprobante(url: string | null): Promise<string | nu
   const { data, error } = await supabase.storage.from('pagos').createSignedUrl(ruta, 600);
   return error || !data?.signedUrl ? url : data.signedUrl;
 }
+
+// ── Facturas de MotoFlow (24/11/2026) ─────────────────────────
+// El emisor es el dueño (sus datos se guardan desde la web: Super Admin →
+// Facturas MotoFlow → Mis datos de emisor). El total se ajusta para
+// familiares y amigos; si baja del precio de lista, pide el motivo.
+export type FacturaPrep = {
+  cliente_nombre: string; cliente_documento: string | null; cliente_direccion: string | null;
+  plan_actual: string;
+  pactado: { plan: string | null; precio: number; nota: string | null } | null;
+  recordados: { plan: string; precio: number; motivo: string | null }[];
+  emisor: { nombre: string; documento: string; itbis_por_defecto: boolean; [k: string]: any };
+};
+export type FacturaMF = {
+  id: string; numero_txt: string; fecha: string; cliente_nombre: string; cliente_documento: string | null;
+  plan_nombre: string; meses: number; precio_lista: number; descuento: number; motivo_descuento: string | null;
+  subtotal: number; itbis: number; total: number; ncf: string | null; metodo_pago: string | null;
+  referencia: string | null; periodo_hasta: string | null; estado: string; emisor: any;
+};
+
+export async function prepararFactura(tenantId: string): Promise<FacturaPrep> {
+  return sinError(await supabase.rpc('mf_factura_preparar', { p_tenant_id: tenantId })) as any;
+}
+
+export async function emitirFactura(i: RegistrarPagoInput & {
+  motivo?: string; ncf?: string; itbis: boolean; guardarEspecial: boolean;
+}): Promise<FacturaMF> {
+  return sinError(await supabase.rpc('mf_factura_emitir', {
+    p_tenant_id: i.tenantId, p_plan_nombre: i.plan, p_meses: i.meses, p_total: i.monto,
+    p_motivo_descuento: i.motivo || null,   // el que llama lo manda solo si hay descuento p_ncf: i.ncf || null, p_itbis: i.itbis,
+    p_registrar_pago: true, p_metodo: i.metodo, p_referencia: i.referencia || null,
+    p_guardar_precio_especial: i.guardarEspecial,
+  })) as any;
+}
+
+// Igual que precioSugerido de la web (src/lib/facturaMotoflow.js).
+export function precioSugerido(prep: FacturaPrep | null, plan: string): { precio: number; motivo: string; origen: string } | null {
+  const p = String(plan || '').toUpperCase();
+  const rec = (prep?.recordados || []).find((r) => r.plan === p);
+  if (rec) return { precio: Number(rec.precio), motivo: rec.motivo || '', origen: 'recordado' };
+  const pac = prep?.pactado;
+  if (pac && Number(pac.precio) > 0 && (!pac.plan || pac.plan === p)) return { precio: Number(pac.precio), motivo: pac.nota || '', origen: 'pactado' };
+  return null;
+}
+
+const rd = (n: number) => Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Texto para compartir por WhatsApp/correo (la app no tiene impresión).
+export function textoFactura(f: FacturaMF): string {
+  const e = f.emisor || {};
+  const fch = (x: string | null) => (x ? new Date(x).toLocaleDateString('es-DO') : '');
+  return [
+    `FACTURA ${f.numero_txt}${f.ncf ? ` · NCF ${f.ncf}` : ''}`,
+    `Fecha: ${fch(f.fecha)}`,
+    `Emisor: ${e.nombre || ''} · Cédula/RNC ${e.documento || ''}`,
+    `Cliente: ${f.cliente_nombre}${f.cliente_documento ? ` · RNC ${f.cliente_documento}` : ''}`,
+    '',
+    `Membresía MotoFlow — plan ${f.plan_nombre} · ${f.meses} ${f.meses === 1 ? 'mes' : 'meses'}: RD$ ${rd(f.precio_lista)}`,
+    Number(f.descuento) > 0 ? `Descuento especial${f.motivo_descuento ? ` (${f.motivo_descuento})` : ''}: -RD$ ${rd(f.descuento)}` : '',
+    Number(f.itbis) > 0 ? `Subtotal: RD$ ${rd(f.subtotal)} · ITBIS 18%: RD$ ${rd(f.itbis)}` : '',
+    `TOTAL: RD$ ${rd(f.total)}`,
+    f.periodo_hasta ? `Vigente hasta: ${fch(f.periodo_hasta)}` : '',
+    '',
+    'Gracias por usar MotoFlow · motoflow.com.do',
+  ].join('\n').replace(/\n{3,}/g, '\n\n');
+}
