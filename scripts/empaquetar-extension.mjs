@@ -28,9 +28,14 @@ const DESTINO = path.join(RAIZ, 'public/downloads');
 // manifest en vez de escribirlos aquí: si mañana se añade un canal nuevo con
 // su script, el ZIP lo incluye solo. Un archivo que falte en el ZIP es una
 // extensión que instala rota y no avisa.
+// (24/11/2026) También el service worker: desde que existe fondo.js el ZIP
+// salía sin él y Chrome no cargaba la extensión ("No se ha podido cargar el
+// script en segundo plano").
 function archivosDe(manifest) {
   const js = (manifest.content_scripts || []).flatMap((cs) => cs.js || []);
-  return [...new Set(js)];
+  if (manifest.background?.service_worker) js.push(manifest.background.service_worker);
+  const recursos = (manifest.web_accessible_resources || []).flatMap((r) => r.resources || []);
+  return [...new Set([...js, ...recursos.filter((f) => !f.includes('*'))])];
 }
 
 function armar({ manifestArchivo, salida, etiqueta }) {
