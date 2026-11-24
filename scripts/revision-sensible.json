@@ -364,7 +364,7 @@
     "src/pages/FlujoCajaPage.jsx": "780178bdfa02b360",
     "src/pages/GestionCobroPage.jsx": "ab20e6df03486db2",
     "src/pages/InventarioFisicoPage.jsx": "8f7342074bedea20",
-    "src/pages/InventarioInteligentePage.jsx": "b539fed6a2087c39",
+    "src/pages/InventarioInteligentePage.jsx": "74456a18d2eb82bc",
     "src/pages/ListaChasisPrestamosPage.jsx": "b1b70541508a15c1",
     "src/pages/NominaPage.jsx": "6be48f0f62f10ad9",
     "src/pages/NotaCreditoFinancieraPage.jsx": "5b0958c46b6abbce",
@@ -470,18 +470,12 @@
     "sql/morla_vieja_hermana_un_inventario.sql": "d3834b775c577951",
     "sql/dgii_razon_social_del_registro.sql": "4d635cd0671e1be1",
     "sql/dgii_razon_social_del_registro_ajustes.sql": "5289df7ca65c9682",
-    "sql/admin_registrar_pago_membresia.sql": "4f45afa70724ceea"
+    "sql/admin_registrar_pago_membresia.sql": "4f45afa70724ceea",
+    "sql/inventario_verificaciones.sql": "2ba706aaf6e67b24",
+    "sql/inventario_verificaciones_ajustes.sql": "8d4f1efdfd499563",
+    "src/components/inventario/SinMovimientoPanel.jsx": "fd2508652ae4c7f1"
   },
   "historial": [
-    {
-      "fecha": "2026-11-10",
-      "nota": "code-review high x2: 1ra 10 hallazgos -> rediseño (traspaso al grabar la venta por trigger, no al escoger; ficha por id; precios al dia; espejo por codigo sin mayusculas; marcas/tipos/modelos por _espejo_*; filtros y busqueda por palabras). 2da 10 hallazgos -> solo ventas FT-, venta de la gemela en MotoPrestamos tambien trae, fallos anotados en catalogo_hermano_fallos, reposicion no pide piezas traidas, unidades con chasis no, stock por LATERAL, validacion/aviso cuentan lo de aqui. Queda: orden de despliegue (SQL antes del front, verificado en publica)",
-      "archivos": [
-        "src/components/ventas/ProductSearchModal.jsx",
-        "src/hooks/useVentas.js",
-        "src/pages/VentasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-10",
       "nota": "code-review high: 9 hallazgos; arreglados 6 (F10 pregunta antes de grabar consumo a un cliente credito fiscal con RNC invalido, la ficha avisa y no bloquea editar clientes viejos, mensaje de todo ceros, mensaje sin decir consumo para NCF papel, VentasPage usa docFiscalValido, archivos nuevos en el commit). Quedan: refresco del aviso sin volver a escoger el cliente; regla copiada del builder (igual criterio, con prueba)",
@@ -1027,6 +1021,16 @@
       "nota": "code-review high superadmin app + admin_registrar_pago: arreglados carrito al cambiar empresa, la app ya no mueve la empresa activa de la web al abrir, monto 0/vacio, coma decimal, cambio a medias, 1 año = 365 dias, sin sumar dias de prueba, registro al final, hoja del selector; prueba SQL encontro y se arreglo choque (tenant,plan,fecha_inicio)",
       "archivos": [
         "sql/admin_registrar_pago_membresia.sql"
+      ]
+    },
+    {
+      "fecha": "2026-11-24",
+      "nota": "code-review high inventario sin movimiento + listas: arreglados aplicar en una transaccion del servidor (inv_verif_aplicar con FOR UPDATE, no ajusta dos veces), pieza en dos listas activas (candado por empresa), carga fallida no cierra la lista, permisos (crear/aplicar/cancelar admin o creador, enviar asignado), existencia actual en el celular; nits: totales reales, almacen principal, dia de fechas UTC, seleccionar todas, back de Android, aviso solo pendientes",
+      "archivos": [
+        "sql/inventario_verificaciones.sql",
+        "sql/inventario_verificaciones_ajustes.sql",
+        "src/components/inventario/SinMovimientoPanel.jsx",
+        "src/pages/InventarioInteligentePage.jsx"
       ]
     }
   ]

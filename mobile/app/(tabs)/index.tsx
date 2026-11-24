@@ -15,6 +15,7 @@ import { fetchCuentasBanco, totalCuentas, CuentaBanco } from '@/src/services/cue
 import VentanasInicio from '@/src/components/ventanas/VentanasInicio';
 import PrimerosPasosInicio from '@/src/components/PrimerosPasosInicio';
 import PromesasInicio from '@/src/components/PromesasInicio';
+import PorConfirmarInicio from '@/src/components/PorConfirmarInicio';
 
 const money = (value: number) =>
   `RD$${Number(value || 0).toLocaleString('es-DO', {
@@ -366,6 +367,9 @@ function SellerDashboard({
         <Text className="text-2xl font-black text-slate-950" numberOfLines={1}>{nombre}</Text>
       </View>
 
+      {/* (23/11/2026) Listas de inventario por confirmar (las mandan desde la PC). */}
+      <PorConfirmarInicio />
+
       <VentanasInicio />
 
       <View className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-4">
@@ -634,6 +638,9 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* (23/11/2026) Listas de inventario que mandaron desde la PC para confirmar. */}
+      <PorConfirmarInicio />
 
       {/* (23/11/2026) "Le prometí…": promesas a clientes con aviso el día que toca. */}
       <PromesasInicio />

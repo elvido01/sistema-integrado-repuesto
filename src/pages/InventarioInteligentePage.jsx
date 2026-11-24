@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import SinMovimientoPanel from '@/components/inventario/SinMovimientoPanel';
 
 const n = (value) => Number(value || 0);
 const money = (value) => n(value).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -226,6 +227,9 @@ const InventarioInteligentePage = () => {
           <Metric title="A reponer" value={resumen.reponer} tone="amber" icon={PackageCheck} />
           <Metric title="Lentos" value={resumen.lentos} tone="slate" icon={TrendingUp} />
         </div>
+
+        {/* (23/11/2026) Sin movimiento por rango de días + listas para confirmar en el celular. */}
+        <SinMovimientoPanel />
 
         {loading ? (
           <div className="bg-white border rounded-lg p-10 flex items-center justify-center text-slate-500">
