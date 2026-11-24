@@ -19,8 +19,8 @@
 --
 -- Revisión (code-review high): las funciones siguen limitadas a la empresa de
 -- la sesión (optimizar_orden_compra exige acceso; demanda por grupo propio).
--- El PRESUPUESTO (get_presupuesto_compras*) sigue por empresa: pendiente de
--- decisión del dueño.
+-- El PRESUPUESTO: ver presupuesto_compras_cuenta_la_hermana.sql (24/11).
+-- Anuladas: las facturas guardan 'ANULADA'; el filtro 'Anulada' no excluía nada.
 -- Cambia SOLO esas líneas; el resto es la definición de producción de hoy.
 -- Las envueltas se editan en su _impl_.
 -- ============================================================
@@ -145,7 +145,7 @@ BEGIN
     CROSS JOIN LATERAL unnest(public._producto_y_gemelos(mi.producto_id)) AS g(pid)
     JOIN public.facturas_detalle fd ON fd.producto_id = g.pid
     JOIN public.facturas f ON f.id = fd.factura_id
-    WHERE COALESCE(f.estado, '') <> 'Anulada'
+    WHERE upper(COALESCE(f.estado, '')) <> 'ANULADA'
       AND f.fecha >= NOW() - INTERVAL '180 days'
     GROUP BY mi.bucket_id
   ),
@@ -299,7 +299,7 @@ BEGIN
       JOIN public.facturas_detalle fd ON fd.producto_id = g.pid
       JOIN public.facturas f ON f.id = fd.factura_id
       WHERE m.grupo_id = v_grupo_id
-        AND COALESCE(f.estado, '') <> 'Anulada'
+        AND upper(COALESCE(f.estado, '')) <> 'ANULADA'
         AND f.fecha >= CURRENT_DATE - 30;
 
       IF v_demand_combo > 0 AND v_stock_combo >= v_demand_combo * 1.5 THEN
@@ -405,11 +405,11 @@ BEGIN
     COALESCE((SELECT SUM(fd.cantidad) FROM public.facturas_detalle fd
       JOIN public.facturas f ON f.id = fd.factura_id
       WHERE fd.producto_id = ANY(public._producto_y_gemelos(p.id)) AND f.fecha >= NOW() - INTERVAL '30 days'
-        AND COALESCE(f.estado, '') <> 'Anulada'), 0)::NUMERIC,
+        AND upper(COALESCE(f.estado, '')) <> 'ANULADA'), 0)::NUMERIC,
     COALESCE((SELECT SUM(fd.cantidad) FROM public.facturas_detalle fd
       JOIN public.facturas f ON f.id = fd.factura_id
       WHERE fd.producto_id = ANY(public._producto_y_gemelos(p.id)) AND f.fecha >= NOW() - INTERVAL '90 days'
-        AND COALESCE(f.estado, '') <> 'Anulada'), 0)::NUMERIC,
+        AND upper(COALESCE(f.estado, '')) <> 'ANULADA'), 0)::NUMERIC,
     COALESCE(p.costo, 0)::NUMERIC,
     COALESCE(p.precio, 0)::NUMERIC,
     CASE WHEN p.precio > 0 AND p.costo > 0 AND p.precio > p.costo
@@ -478,7 +478,7 @@ BEGIN
           WHERE fd.producto_id = ANY(public._producto_y_gemelos(b.producto_id))
             AND p.tenant_id = v_tenant
             AND f.fecha >= NOW() - INTERVAL '90 days'
-            AND COALESCE(f.estado, '') <> 'Anulada'
+            AND upper(COALESCE(f.estado, '')) <> 'ANULADA'
         ), 0) AS ventas_90d
       FROM base b
       LEFT JOIN public.productos p ON p.id = b.producto_id AND p.tenant_id = v_tenant
@@ -607,7 +607,7 @@ BEGIN
   JOIN public.facturas_detalle fd ON fd.producto_id = gm.pid
   JOIN public.facturas f ON f.id = fd.factura_id
   WHERE m.grupo_id = p_grupo_id
-    AND COALESCE(f.estado, '') <> 'Anulada'
+    AND upper(COALESCE(f.estado, '')) <> 'ANULADA'
     AND f.fecha >= CURRENT_DATE - p_dias;
 
   RETURN json_build_object(

@@ -479,16 +479,10 @@
     "src/components/admin/AdminFacturasMotoflow.jsx": "abd030a121b470e1",
     "src/components/admin/FacturarMembresiaDialog.jsx": "989560eb1dd4a63f",
     "src/lib/facturaMotoflow.js": "1ff37bc9b3bfbe65",
-    "sql/compras_cuentan_ventas_de_la_hermana.sql": "01d25c301150c47a"
+    "sql/compras_cuentan_ventas_de_la_hermana.sql": "e87b431e8e5940a0",
+    "sql/presupuesto_compras_cuenta_la_hermana.sql": "0b718539afd53af4"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: 10 hallazgos; arreglados 8 (costo = precio impreso antes de descuento para no descontar doble, descuento general encima del propio de la linea, reglas del prompt sin contradiccion y sin recalcular lo impreso, porcentaje vs monto explicito y >=1 como porcentaje, codigos numericos a texto, chequeo fila por fila contra el importe impreso nombrando la fila, sin RD$ fijo). Quedan: update de productos sin select (caso viejo en la base del revisor)",
-      "archivos": [
-        "src/pages/ComprasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high x3: ITBIS servicios = cotejo solo sobre montos tecleados (catalogo/comision/factura guardada intactos); produccion con E31 o E32; F10 frena venta sin secuencia del tipo del cliente (no en edicion, refresca preview). Pendiente conocido: POS movil no tiene el freno; descuento de lineas guardadas preexistente.",
@@ -1036,6 +1030,14 @@
       "nota": "code-review high: 10 hallazgos. Arreglados: solo empresa con compra_por_hermana (Morla), filtros de empresa en get_demanda_grupo y optimizar_orden_compra (+_exigir_acceso_empresa y p.tenant_id), ordenes de la gemela descontadas, joins por unnest (209 ms), COALESCE estado, grants del helper. Pendiente decision del dueño: presupuesto sigue por empresa. Probado en ensayo (ventas suman, atacante bloqueado).",
       "archivos": [
         "sql/compras_cuentan_ventas_de_la_hermana.sql"
+      ]
+    },
+    {
+      "fecha": "2026-11-24",
+      "nota": "code-review high presupuesto: 10 hallazgos. Arreglados: ANULADA en mayusculas (tambien en las 5 funciones de compras), empresas calculadas una vez, no contar doble si las dos tienen compra_por_hermana, ventas_incluyen_hermana en el JSON, search_path en v2, notas. Aclarado al dueño: Morla tiene presupuesto manual, el disponible no cambia. Pendiente menor: ventana en UTC (pre-existente).",
+      "archivos": [
+        "sql/compras_cuentan_ventas_de_la_hermana.sql",
+        "sql/presupuesto_compras_cuenta_la_hermana.sql"
       ]
     }
   ]
