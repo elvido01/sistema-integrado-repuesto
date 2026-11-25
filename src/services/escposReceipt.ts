@@ -937,13 +937,14 @@ export interface ReciboColegioData {
     pago: {
         numero: number; fecha?: string; created_at?: string; total?: number; anulado?: boolean; recibo_ingreso?: string;
         anio_completo?: boolean; tasa_usd?: number; usuario?: string;
+        subtotal?: number; descuento?: number; descuento_pct?: number; descuento_base?: number;
         formas_pago?: { forma: string; monto: number; referencia?: string }[];
     };
     familia?: { nombre?: string; madre_nombre?: string; padre_nombre?: string; tutor_nombre?: string };
     anio?: { nombre?: string } | null;
     estudiantes: {
         nombre: string; curso?: string; tanda?: string; pendiente?: number;
-        lineas: { descripcion: string; moneda?: string; monto_moneda?: number; monto: number }[];
+        lineas: { descripcion: string; moneda?: string; monto_moneda?: number; monto: number; descuento?: number }[];
     }[];
     proximoPago?: string;
 }
@@ -992,10 +993,15 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     for (const e of d.estudiantes) {
         for (const l of e.lineas) {
             const desc = `${String(l.descripcion || '').trim() || '(sin descripción)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
-            lines.push(...fila(desc, l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto)));
+            lines.push(...fila(desc, l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(Number(l.monto) + Number(l.descuento || 0))));
         }
     }
-    if (p.anio_completo) for (const l of wrapLines('Año completo con descuento en las mensualidades')) lines.push(l);
+    if (Number(p.descuento) > 0) {
+        lines.push(leftRight('Subtotal', n2(p.subtotal)));
+        lines.push(leftRight(`Desc. año completo${p.descuento_pct ? ` ${Number(p.descuento_pct)}%` : ''}`, `-${n2(p.descuento)}`));
+        // Si en el mismo cobro va otra cosa, se dice sobre qué es el descuento.
+        if (p.descuento_base && Math.abs(Number(p.descuento_base) - Number(p.subtotal)) > 0.005) lines.push(`  (sobre mensualidades ${n2(p.descuento_base)})`);
+    } else if (p.anio_completo) for (const l of wrapLines('Año completo con descuento en las mensualidades')) lines.push(l);
     lines.push(dashLine());
     lines.push(CMD.BOLD_ON + leftRight('TOTAL RD$', n2(p.total)) + CMD.BOLD_OFF);
     if (p.tasa_usd && d.estudiantes.some((e) => e.lineas.some((l) => l.moneda === 'USD'))) lines.push(`Tasa US$: ${n2(p.tasa_usd)}`);

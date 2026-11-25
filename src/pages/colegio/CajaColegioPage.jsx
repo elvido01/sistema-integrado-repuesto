@@ -354,17 +354,41 @@ export default function CajaColegioPage() {
   };
 
   // ── Lo que se va a cobrar ──
-  const lineas = useMemo(() => {
+  // (25/11/2026) Año completo: el descuento es sobre el TOTAL del año del
+  // estudiante (6,150 x 10 = 61,500 - 5% = 58,425) y se reparte entre los
+  // meses; el último mes se lleva el redondeo. Mismo cálculo que edu_cobrar.
+  const descAnio = useMemo(() => {
     const pct = Number(cfg?.descuento_anual_pct || 0);
+    const mapa = {};
+    Object.entries(anioCompleto).filter(([, on]) => on).forEach(([estId]) => {
+      const mens = cargos.filter((c) => c.estudiante_id === estId && c.tipo === 'mensualidad' && c.anio_id === anio?.id && c.estado !== 'anulado')
+        .sort((a, b) => String(a.periodo || '').localeCompare(String(b.periodo || '')) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      // En centavos enteros: con decimales flotantes 5,120.50 x 5% daba 256.02 y la base 256.03.
+      const cts = (x) => Math.round(Number(x) * 100);
+      const totalDesc = Math.round(mens.reduce((s, c) => s + cts(c.monto), 0) * pct / 100);
+      let repartido = 0;
+      mens.forEach((c, i) => {
+        const d = i === mens.length - 1 ? totalDesc - repartido : Math.round(cts(c.monto) * pct / 100);
+        repartido += d;
+        mapa[c.id] = d / 100;
+      });
+    });
+    return mapa;
+  }, [cargos, anioCompleto, cfg, anio]);
+  const lineas = useMemo(() => {
     return cargos.filter((c) => sel[c.id]).map((c) => {
       let monto = pendienteDe(c);
-      if (c.tipo === 'mensualidad' && c.anio_id === anio?.id && anioCompleto[c.estudiante_id]) monto = Math.round(Number(c.monto) * (1 - pct / 100) * 100) / 100;
+      let desc = 0;
+      if (c.tipo === 'mensualidad' && c.anio_id === anio?.id && anioCompleto[c.estudiante_id]) { desc = descAnio[c.id] || 0; monto = Math.round((Number(c.monto) - desc) * 100) / 100; }
       else if (c.tipo === 'mensualidad' && sel[c.id] === 'medio') monto = Math.round(Number(c.monto) / 2 * 100) / 100;
       const rd = c.moneda === 'USD' ? Math.round(monto * Number(tasa || 0) * 100) / 100 : monto;
-      return { cargo: c, monto, rd };
+      const descRd = c.moneda === 'USD' ? Math.round(desc * Number(tasa || 0) * 100) / 100 : desc;
+      return { cargo: c, monto, rd, descRd };
     });
-  }, [cargos, sel, anioCompleto, cfg, tasa, anio]);
+  }, [cargos, sel, anioCompleto, descAnio, tasa, anio]);
   const total = lineas.reduce((s, l) => s + l.rd, 0);
+  const descuentoTotal = lineas.reduce((s, l) => s + l.descRd, 0);
+  const baseDescuento = lineas.filter((l) => l.descRd > 0).reduce((s, l) => s + l.rd + l.descRd, 0);
   const hayUSD = lineas.some((l) => l.cargo.moneda === 'USD');
   const sumaFormas = formas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
 
@@ -375,11 +399,17 @@ export default function CajaColegioPage() {
 
   const alternar = (c) => setSel((s) => { const n = { ...s }; if (n[c.id]) delete n[c.id]; else n[c.id] = 'completo'; return n; });
 
+  const anioEnteroSinPagar = (estId) => {
+    const mens = cargos.filter((c) => c.estudiante_id === estId && c.tipo === 'mensualidad' && c.anio_id === anio?.id && c.estado !== 'anulado');
+    return mens.length > 0 && mens.every((c) => c.estado === 'pendiente' && Number(c.pagado) === 0 && Number(c.descuento) === 0);
+  };
+
   const marcarAnioCompleto = (est, on) => {
     // Solo las mensualidades del año actual (una deuda del año pasado no lleva el descuento).
     const mens = cargos.filter((c) => c.estudiante_id === est.id && c.tipo === 'mensualidad' && c.anio_id === anio?.id && pendienteDe(c) > 0);
-    if (on && mens.some((c) => Number(c.pagado) > 0)) {
-      return error('No se puede', 'El año completo es con las mensualidades sin abonar (hay una con medio mes pagado).');
+    // (25/11/2026) El descuento es solo pagando el año ENTERO: ningún mes pagado ni abonado.
+    if (on && !anioEnteroSinPagar(est.id)) {
+      return error('No se puede', 'El descuento es solo pagando el año completo, y este estudiante ya tiene meses pagados o abonados.');
     }
     setAnioCompleto((a) => ({ ...a, [est.id]: on }));
     setSel((s) => { const n = { ...s }; mens.forEach((c) => { if (on) n[c.id] = 'completo'; else delete n[c.id]; }); return n; });
@@ -623,12 +653,14 @@ export default function CajaColegioPage() {
                           : 'Este estudiante todavía no tiene la cuenta del año: se crea al completar su ficha en Estudiantes. La caja solo cobra lo que ya está cargado.')}</div>
                     ) : (
                       <div className="px-4 py-2">
-                        {hayMensPend && Number(cfg?.descuento_anual_pct) > 0 && (
+                        {hayMensPend && Number(cfg?.descuento_anual_pct) > 0 && (anioEnteroSinPagar(e.id) ? (
                           <label className="flex items-center gap-2 text-sm py-1 text-emerald-800">
                             <input type="checkbox" checked={!!anioCompleto[e.id]} disabled={incompleta} onChange={(ev) => marcarAnioCompleto(e, ev.target.checked)} />
-                            Pagar todas las mensualidades que faltan con {Number(cfg.descuento_anual_pct)}% de descuento
+                            Pagar el año completo con {Number(cfg.descuento_anual_pct)}% de descuento sobre el total
                           </label>
-                        )}
+                        ) : (
+                          <div className="text-xs py-1 text-gray-500">El {Number(cfg.descuento_anual_pct)}% de descuento es solo pagando el año completo (ya tiene meses pagados).</div>
+                        ))}
                         <table className="w-full text-sm">
                           <tbody>
                             {pendientes.map((c) => {
@@ -690,7 +722,7 @@ export default function CajaColegioPage() {
                     {lineas.map((l) => (
                       <div key={l.cargo.id} className="flex justify-between gap-2">
                         <span className="truncate">{l.cargo.descripcion}{sel[l.cargo.id] === 'medio' ? ' (medio)' : ''}</span>
-                        <span className="font-mono">{l.cargo.moneda === 'USD' ? `US$${n2(l.monto)}` : n2(l.rd)}</span>
+                        <span className="font-mono">{l.cargo.moneda === 'USD' ? `US$${n2(l.monto)}` : n2(l.rd + l.descRd)}</span>
                       </div>
                     ))}
                   </div>
@@ -700,6 +732,12 @@ export default function CajaColegioPage() {
                     Tasa del dólar hoy (RD$ por US$)
                     <input type="number" min="0" step="0.01" className={`${campo} w-full mt-1`} value={tasa} onChange={(e) => setTasa(e.target.value)} />
                   </label>
+                )}
+                {descuentoTotal > 0 && (
+                  <div className="text-sm border-t pt-2 space-y-0.5">
+                    <div className="flex justify-between"><span>Subtotal</span><span className="font-mono">{n2(total + descuentoTotal)}</span></div>
+                    <div className="flex justify-between text-emerald-700"><span>Descuento año completo {Number(cfg?.descuento_anual_pct)}%{Math.abs(baseDescuento - (total + descuentoTotal)) > 0.005 ? ` de ${n2(baseDescuento)}` : ''}</span><span className="font-mono">-{n2(descuentoTotal)}</span></div>
+                  </div>
                 )}
                 <div className="flex flex-wrap justify-between items-baseline gap-x-2 border-t pt-2">
                   <span className="font-black">TOTAL</span>

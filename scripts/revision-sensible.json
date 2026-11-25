@@ -413,7 +413,7 @@
     "sql/orden_compra_por_encargo_ajustes.sql": "79a0d64eb377e852",
     "sql/orden_compra_solo_por_encargo.sql": "5053d499ecabfcef",
     "sql/centros_educativos_caja.sql": "fa4115bc9e9dafe8",
-    "src/pages/colegio/CajaColegioPage.jsx": "7f428db32bfefddd",
+    "src/pages/colegio/CajaColegioPage.jsx": "5f8fa705298b4038",
     "sql/centros_educativos_factura_fiscal.sql": "94015fd6b1d979ec",
     "src/components/colegio/FacturaFiscalDialog.jsx": "60cdf92b7afe90ea",
     "sql/compras_itbis_incluido_importe.sql": "f3ec3ff0510af2b8",
@@ -485,18 +485,6 @@
     "src/components/colegio/CuentasBancariasColegio.jsx": "48dd1033dd09db90"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: logo en hoja carta y PDF (escapado, guarda de tamaño 0), nota al pie configurable por empresa, tope 80 en descripcion+referencia (tambien catalogo/calculadora), clic derecho solo PDF en FT y Escape no cierra el panel, FT filtrado por tenant, reemision de rechazados: no anuladas/devueltas, historial de rechazos, XML se rearma, apartado 3 min; NombreItem 80 + DescripcionItem.",
-      "archivos": [
-        "sql/nota_factura_empresa.sql",
-        "src/components/common/pdf/facturaCartaPDF.js",
-        "src/components/ventas/LineasServicios.jsx",
-        "src/pages/Configuracion/DgiiMonitorPage.jsx",
-        "supabase/functions/emitir-fiscal/dgii_xml_builder.ts",
-        "supabase/functions/emitir-fiscal/index.ts"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: facturaCartaPDF titulo en varias lineas baja el recuadro (alto de linea derivado de la fuente, margen 4 mm, una linea igual que antes); totales+QR+firmas pasan a hoja nueva si no caben.",
@@ -1039,6 +1027,13 @@
       "nota": "code-review high impresion tickets: 7 hallazgos. Arreglados: aire proporcional (+4%) contra 2da pagina, espera al load del iframe (tope 15s) para no perder el logo, print neutralizado dentro del iframe (sin doble impresion), regex anclada a @page, errores de medida no impiden imprimir, cierre por printHtmlSmart (agente), escape de textos de usuario en el cierre (XSS pre-existente). Probado en Chrome: 100x73mm, 1 pagina, 1 impresion.",
       "archivos": [
         "src/pages/Configuracion/CierreCajaPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-25",
+      "nota": "code-review high: 9 hallazgos (2 importantes) corregidos: servidor fija monto del mes (cuadra exacto), caja en centavos enteros igual que la base, descuento_base sobre mensualidades, estudiantes de la familia, NULLS FIRST, % historico desde datos, mascara, variable sobrante",
+      "archivos": [
+        "src/pages/colegio/CajaColegioPage.jsx"
       ]
     }
   ]

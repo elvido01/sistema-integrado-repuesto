@@ -50,8 +50,9 @@ export function reciboColegioTicketHTML(d) {
   <div>${d.familia.tutor_nombre ? 'Tutor' : 'Familia'}: ${esc(d.familia.tutor_nombre || d.familia.madre_nombre || d.familia.padre_nombre || d.familia.nombre)}</div>
   <div>Año escolar: ${esc(d.anio?.nombre || '')}</div>
   <div class="sep"></div>
-  ${lineas.map((l) => `<div class="r"><span>${esc(l.descripcion)}${varios ? ` (${esc(l.est.split(' ')[0])})` : ''}</span><span>${l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(l.monto)}</span></div>`).join('')}
-  ${p.anio_completo ? '<div class="peq">Año completo con descuento en las mensualidades</div>' : ''}
+  ${lineas.map((l) => `<div class="r"><span>${esc(l.descripcion)}${varios ? ` (${esc(l.est.split(' ')[0])})` : ''}</span><span>${l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(Number(l.monto) + Number(l.descuento || 0))}</span></div>`).join('')}
+  ${Number(p.descuento) > 0 ? `<div class="r"><span>Subtotal</span><span>${n2(p.subtotal)}</span></div><div class="r"><span>Desc. año completo${p.descuento_pct ? ` ${Number(p.descuento_pct)}%` : ''}${p.descuento_base && Math.abs(Number(p.descuento_base) - Number(p.subtotal)) > 0.005 ? ` de ${n2(p.descuento_base)}` : ''}</span><span>-${n2(p.descuento)}</span></div>`
+    : p.anio_completo ? '<div class="peq">Año completo con descuento en las mensualidades</div>' : ''}
   <div class="sep"></div>
   <div class="r tot"><span>TOTAL RD$</span><span>${n2(p.total)}</span></div>
   ${p.tasa_usd && lineas.some((l) => l.moneda === 'USD') ? `<div class="peq">Tasa US$: ${n2(p.tasa_usd)}</div>` : ''}
@@ -85,7 +86,7 @@ export function reciboColegioHojaHTML(d) {
         <div><span>Tarifa mensual</span><b>RD$ ${n2(e.tarifa)}${Number(e.beca_pct) > 0 ? ` · beca ${Number(e.beca_pct)}%` : ''}</b></div>
       </div>
       <table class="det"><tr><th>Concepto</th><th class="m">Monto RD$</th></tr>
-        ${e.lineas.map((l) => `<tr><td>${esc(l.descripcion)}${l.moneda === 'USD' ? ` (US$ ${n2(l.monto_moneda)})` : ''}</td><td class="m">${n2(l.monto)}</td></tr>`).join('')}
+        ${e.lineas.map((l) => `<tr><td>${esc(l.descripcion)}${l.moneda === 'USD' ? ` (US$ ${n2(l.monto_moneda)})` : ''}</td><td class="m">${n2(Number(l.monto) + Number(l.descuento || 0))}</td></tr>`).join('')}
       </table>
       ${tarjeta ? `<h2>Tarjeta de pagos ${esc(d.anio?.nombre || '')}</h2><div class="tarjeta">${tarjeta}</div>` : ''}
       <div class="pend-est">Pendiente del año de ${esc(e.nombre.split(' ')[0])}: <b>RD$ ${n2(e.pendiente)}</b></div>`;
@@ -137,6 +138,8 @@ export function reciboColegioHojaHTML(d) {
   </div>
   <div class="fam">Familia <b>${esc(d.familia.nombre)}</b>${[d.familia.madre_nombre, d.familia.padre_nombre, d.familia.tutor_nombre].filter(Boolean).length ? ` · ${esc([d.familia.madre_nombre, d.familia.padre_nombre, d.familia.tutor_nombre].filter(Boolean).join(' / '))}` : ''}${d.familia.telefono ? ` · ${esc(d.familia.telefono)}` : ''}</div>
   ${d.estudiantes.map(bloqueEstudiante).join('')}
+  ${Number(p.descuento) > 0 ? `<div class="total" style="font-size:13px;font-weight:600;border-top:1px solid #16325c"><span>Subtotal</span><span>RD$ ${n2(p.subtotal)}</span></div>
+  <div class="total" style="font-size:13px;font-weight:600;border-top:0;margin-top:0;padding-top:2px"><span>Descuento año completo${p.descuento_pct ? ` ${Number(p.descuento_pct)}%` : ''}${p.descuento_base && Math.abs(Number(p.descuento_base) - Number(p.subtotal)) > 0.005 ? ` de ${n2(p.descuento_base)}` : ''}</span><span>-RD$ ${n2(p.descuento)}</span></div>` : ''}
   <div class="total"><span>TOTAL PAGADO${p.anio_completo ? ' (año completo con descuento)' : ''}</span><span>RD$ ${n2(p.total)}</span></div>
   <div class="pago">
     <div>Forma de pago: <b>${(p.formas_pago || []).filter((f) => Number(f.monto) > 0).map((f) => `${esc(f.forma)} ${n2(f.monto)}${f.referencia ? ` #${esc(f.referencia)}` : ''}`).join(' · ')}</b></div>
