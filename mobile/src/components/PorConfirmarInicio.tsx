@@ -1,8 +1,11 @@
 // Aviso en el Inicio de la app: listas de inventario que te mandaron a
 // confirmar desde la PC (23/11/2026). Solo sale si hay alguna pendiente.
 // La app no tiene notificaciones en el teléfono: este aviso es el recordatorio.
-import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+// (25/11/2026) Se vuelve a mirar al regresar a la app y cada minuto mientras
+// el Inicio está a la vista: antes solo al entrar al Inicio, y con la app ya
+// abierta en esa pantalla una lista nueva no salía nunca.
+import React, { useCallback, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, AppState } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { supabase } from '@/src/supabase/client';
@@ -12,21 +15,29 @@ export default function PorConfirmarInicio() {
   const router = useRouter();
   const { user, tenantId } = useAuthStore();
   const [n, setN] = useState(0);
+  const turno = useRef(0);   // solo cuenta la respuesta de la última consulta
 
   useFocusEffect(useCallback(() => {
     let vivo = true;
-    if (user?.id && tenantId) {
+    const mirar = () => {
+      if (!user?.id || !tenantId) { setN(0); return; }
+      if (AppState.currentState !== 'active') return;   // en segundo plano no se consulta
+      const yo = ++turno.current;
       supabase.from('inv_verificaciones').select('id, inv_verificacion_items(resultado)')
         .eq('asignado_a', user.id).eq('estado', 'pendiente')
-        .then(({ data }) => {
-          if (!vivo) return;
+        .then(({ data, error }) => {
+          // Si falla (red despertando al volver a la app) se queda el aviso que había.
+          if (!vivo || error || yo !== turno.current) return;
           // Solo las que faltan; si ya contó todo, recuerda que falta enviar.
           const items = (data || []).flatMap((l: any) => l.inv_verificacion_items || []);
           const faltan = items.filter((i: any) => i.resultado === 'pendiente').length;
           setN(faltan || (items.length ? -1 : 0));
         });
-    }
-    return () => { vivo = false; };
+    };
+    mirar();
+    const cada = setInterval(mirar, 60000);
+    const app = AppState.addEventListener('change', (s) => { if (s === 'active') mirar(); });
+    return () => { vivo = false; clearInterval(cada); app.remove(); };
   }, [user?.id, tenantId]));
 
   if (!n) return null;

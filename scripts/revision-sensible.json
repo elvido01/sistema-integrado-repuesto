@@ -473,7 +473,7 @@
     "sql/admin_registrar_pago_membresia.sql": "4f45afa70724ceea",
     "sql/inventario_verificaciones.sql": "2ba706aaf6e67b24",
     "sql/inventario_verificaciones_ajustes.sql": "8d4f1efdfd499563",
-    "src/components/inventario/SinMovimientoPanel.jsx": "fd2508652ae4c7f1",
+    "src/components/inventario/SinMovimientoPanel.jsx": "c28ad73f6876025c",
     "sql/motoflow_facturas.sql": "4c23ead5088a028d",
     "sql/motoflow_facturas_ajustes.sql": "5e64ae21adf3911f",
     "src/components/admin/AdminFacturasMotoflow.jsx": "abd030a121b470e1",
@@ -482,16 +482,10 @@
     "sql/compras_cuentan_ventas_de_la_hermana.sql": "e87b431e8e5940a0",
     "sql/presupuesto_compras_cuenta_la_hermana.sql": "0b718539afd53af4",
     "sql/colegio_cuentas_bancarias.sql": "49f0253e476df8fc",
-    "src/components/colegio/CuentasBancariasColegio.jsx": "48dd1033dd09db90"
+    "src/components/colegio/CuentasBancariasColegio.jsx": "48dd1033dd09db90",
+    "sql/inventario_sin_movimiento_estado_lista.sql": "3ff55b14d84c4bb3"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: facturaCartaPDF titulo en varias lineas baja el recuadro (alto de linea derivado de la fuente, margen 4 mm, una linea igual que antes); totales+QR+firmas pasan a hoja nueva si no caben.",
-      "archivos": [
-        "src/components/common/pdf/facturaCartaPDF.js"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: RNC con guiones solo al mostrar (000000000 sin disfrazar), busqueda por digitos; lupa RNC en Ventas -> cliente_desde_rnc (solo por RNC, no por codigo; inactivo no se escoge; codigo libre; indice por digitos), RNC escrito se aplica al salir del campo; cargador DGII: estado por coincidencia exacta desde el final, error claro de token, quita los que la DGII ya no publica solo con listado completo. Probado el SQL en transaccion revertida.",
@@ -1034,6 +1028,14 @@
       "nota": "code-review high: 9 hallazgos (2 importantes) corregidos: servidor fija monto del mes (cuadra exacto), caja en centavos enteros igual que la base, descuento_base sobre mensualidades, estudiantes de la familia, NULLS FIRST, % historico desde datos, mascara, variable sobrante",
       "archivos": [
         "src/pages/colegio/CajaColegioPage.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-25",
+      "nota": "code-review high: 9 hallazgos (4 importantes) corregidos: aviso app no se borra si falla la red + turno + sin consultar en segundo plano + limpia sin sesion; panel se refresca al volver/cada minuto solo en su pestaña; etiqueta neutra sin dato; bool_or prefiere pendiente; prueba SQL con lista inventada; listas abiertas todas",
+      "archivos": [
+        "sql/inventario_sin_movimiento_estado_lista.sql",
+        "src/components/inventario/SinMovimientoPanel.jsx"
       ]
     }
   ]

@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Send, ClipboardCheck, Search, CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { usePanels } from '@/contexts/PanelContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -46,25 +47,54 @@ export default function SinMovimientoPanel() {
   const [revisar, setRevisar] = useState(null);
 
   const r = RANGOS.find((x) => x.k === rango);
+  const { activePanel } = usePanels();
+  const activoRef = React.useRef(true);
+  activoRef.current = activePanel === 'inventario-inteligente';
+  // Al volver a esta pestaña, también se refresca.
+  useEffect(() => { if (activePanel === 'inventario-inteligente') refrescar.current?.(); }, [activePanel]);
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
+  // silencioso = refresco solo (al volver a la ventana / cada minuto): sin
+  // spinner, sin aviso de error y sin borrar lo que ya está marcado.
+  const cargar = useCallback(async ({ silencioso = false } = {}) => {
+    if (!silencioso) setCargando(true);
     const { data, error } = await supabase.rpc('get_inventario_sin_movimiento', { p_dias_min: r.min, p_dias_max: r.max, p_search: busqueda.trim() });
-    setCargando(false);
-    if (error) { toast({ variant: 'destructive', title: 'No se pudo cargar', description: error.message }); return; }
+    if (!silencioso) setCargando(false);
+    if (error) { if (!silencioso) toast({ variant: 'destructive', title: 'No se pudo cargar', description: error.message }); return; }
     setFilas(data || []);
-    setMarcadas(new Set());
+    if (silencioso) {
+      const libres = new Set((data || []).filter((x) => !x.en_verificacion).map((x) => x.id));
+      setMarcadas((m) => new Set([...m].filter((id) => libres.has(id))));
+    } else setMarcadas(new Set());
   }, [r.min, r.max, busqueda, toast]);
 
+  // (25/11/2026) Las listas abiertas (en el celular o por aplicar) salen
+  // TODAS; de las cerradas, las 15 más recientes. Antes eran 15 en total y
+  // una lista vieja por aplicar podía quedar sin botón.
   const cargarListas = useCallback(async () => {
-    const { data } = await supabase.from('inv_verificaciones')
-      .select('id, titulo, estado, asignado_a, created_at, enviada_at, aplicada_at, inv_verificacion_items(resultado)')
-      .order('created_at', { ascending: false }).limit(15);
-    setListas(data || []);
+    const campos = 'id, titulo, estado, asignado_a, created_at, enviada_at, aplicada_at, inv_verificacion_items(resultado)';
+    const [ab, ce] = await Promise.all([
+      supabase.from('inv_verificaciones').select(campos).in('estado', ['pendiente', 'enviada']).order('created_at', { ascending: false }),
+      supabase.from('inv_verificaciones').select(campos).in('estado', ['aplicada', 'cancelada']).order('created_at', { ascending: false }).limit(15),
+    ]);
+    if (ab.error || ce.error) return;   // se queda lo que había
+    setListas([...(ab.data || []), ...(ce.data || [])]);
   }, []);
 
   useEffect(() => { cargar(); }, [rango]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { cargarListas(); }, [cargarListas]);
+
+  // (25/11/2026) Lo que hacen en el teléfono se ve aquí sin recargar: al
+  // volver a esta ventana y cada minuto mientras está a la vista.
+  const refrescar = React.useRef(null);
+  refrescar.current = () => { cargar({ silencioso: true }); cargarListas(); };
+  useEffect(() => {
+    // Las pestañas escondidas siguen montadas: solo refresca si esta es la que se ve.
+    const siVisible = () => { if (document.visibilityState === 'visible' && activoRef.current) refrescar.current?.(); };
+    const cada = setInterval(siVisible, 60000);
+    window.addEventListener('focus', siVisible);
+    document.addEventListener('visibilitychange', siVisible);
+    return () => { clearInterval(cada); window.removeEventListener('focus', siVisible); document.removeEventListener('visibilitychange', siVisible); };
+  }, []);
 
   // Totales del servidor: reales aunque la lista se corte en 2,000.
   const totales = useMemo(() => ({
@@ -142,7 +172,12 @@ export default function SinMovimientoPanel() {
                     <div className="font-semibold text-slate-800">{f.codigo} · {f.descripcion}</div>
                     <div className="text-[11px] text-slate-500">
                       {f.marca || 'Sin marca'}
-                      {f.en_verificacion && <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">en una lista</span>}
+                      {/* (25/11/2026) En qué paso va: contar en el teléfono, o ya contada y falta aplicar aquí. */}
+                      {f.en_verificacion && (f.verificacion_estado === 'enviada'
+                        ? <span className="ml-2 px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold" title="Ya la contaron en el teléfono. Abajo, en las listas, toca «Revisar y aplicar» para cerrarla.">contada · falta aplicar</span>
+                        : f.verificacion_estado === 'pendiente'
+                          ? <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold" title="Está en una lista que todavía no han contado en el teléfono.">en lista · por contar</span>
+                          : <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">en una lista</span>)}
                     </div>
                   </td>
                   <td className="py-1.5 text-slate-700">{f.ubicacion || <span className="text-slate-400">—</span>}</td>
