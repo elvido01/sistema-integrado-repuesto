@@ -35,6 +35,7 @@ export function reciboColegioTicketHTML(d) {
   .r { display: flex; justify-content: space-between; gap: 6px; } .tot { font-size: 14px; font-weight: 700; }
   .peq { font-size: 11.5px; } img { width: 56px; height: 56px; display: block; margin: 0 auto 4px; filter: grayscale(1); }
   .anulado { border: 2px solid #000; text-align: center; font-weight: 700; padding: 2px; margin: 4px 0; }
+  .grande { font-size: 15px; } .grande .tot { font-size: 16px; }   /* (25/11/2026) lo que se cobra, más grande */
 </style></head><body>
   ${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : ''}
   <div class="c b">${esc(c.nombre)}</div>
@@ -50,13 +51,15 @@ export function reciboColegioTicketHTML(d) {
   <div>${d.familia.tutor_nombre ? 'Tutor' : 'Familia'}: ${esc(d.familia.tutor_nombre || d.familia.madre_nombre || d.familia.padre_nombre || d.familia.nombre)}</div>
   <div>Año escolar: ${esc(d.anio?.nombre || '')}</div>
   <div class="sep"></div>
-  ${lineas.map((l) => `<div class="r"><span>${esc(l.descripcion)}${varios ? ` (${esc(l.est.split(' ')[0])})` : ''}</span><span>${l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(Number(l.monto) + Number(l.descuento || 0))}</span></div>`).join('')}
+  <div class="grande">
+  ${lineas.map((l) => `<div class="r"><span>${esc(l.descripcion.replace(/^Mensualidad\b/i, 'Mens.'))}${varios ? ` (${esc(l.est.split(' ')[0])})` : ''}</span><span>${l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(Number(l.monto) + Number(l.descuento || 0))}</span></div>`).join('')}
   ${Number(p.descuento) > 0 ? `<div class="r"><span>Subtotal</span><span>${n2(p.subtotal)}</span></div><div class="r"><span>Desc. año completo${p.descuento_pct ? ` ${Number(p.descuento_pct)}%` : ''}${p.descuento_base && Math.abs(Number(p.descuento_base) - Number(p.subtotal)) > 0.005 ? ` de ${n2(p.descuento_base)}` : ''}</span><span>-${n2(p.descuento)}</span></div>`
     : p.anio_completo ? '<div class="peq">Año completo con descuento en las mensualidades</div>' : ''}
   <div class="sep"></div>
   <div class="r tot"><span>TOTAL RD$</span><span>${n2(p.total)}</span></div>
   ${p.tasa_usd && lineas.some((l) => l.moneda === 'USD') ? `<div class="peq">Tasa US$: ${n2(p.tasa_usd)}</div>` : ''}
   ${(p.formas_pago || []).filter((f) => Number(f.monto) > 0).map((f) => `<div class="r"><span>${esc(f.forma)}${f.referencia ? ` #${esc(f.referencia)}` : ''}</span><span>${n2(f.monto)}</span></div>`).join('')}
+  </div>
   <div class="sep"></div>
   <div class="r"><span>Pendiente del año</span><span>${n2(pendiente)}</span></div>
   ${d.proximoPago ? `<div class="peq">Próximo pago: ${esc(d.proximoPago)}</div>` : ''}

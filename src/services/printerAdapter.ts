@@ -259,6 +259,9 @@ export function ajustarParaImpresora(printerName: string, escpos: string): strin
     // Solo si hay bytes así (letras, o el largo de un QR): los tickets de solo
     // ASCII quedan igual. Escoger la tabla no cambia el texto ASCII.
     if (/[\x80-\xFF]/.test(s)) s = s.replace(/\x1B@/g, '\x1B@\x1B\x1Dt\x01');
+    // (25/11/2026) Doble alto: ESC ! 0x10 es de ESC/POS; en el modo Star es
+    // ESC i n1 n2 (n1 = alto extra, n2 = ancho extra). ESC ! 0 vuelve a normal.
+    s = s.replace(/\x1B!\x10/g, '\x1Bi\x01\x00').replace(/\x1B!\x00/g, '\x1Bi\x00\x00');
     // FS . (modo chino de las clónicas) no está probado en la Star: fuera.
     return s.replace(/\x1C\./g, '');
 }

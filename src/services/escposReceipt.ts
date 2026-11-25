@@ -13,6 +13,9 @@ import { numeroRecibo, NOTA_FISCAL_COLEGIO } from '@/lib/printColegio';
 const ESC = '\x1B';
 const GS = '\x1D';
 
+/** "Mensualidad Diciembre 2026" → "Mens. Diciembre 2026" (recibos del colegio). */
+export const abreviarConcepto = (s: string): string => String(s || '').replace(/^Mensualidad\b/i, 'Mens.');
+
 const CMD = {
     INIT: ESC + '@',           // Initialize printer
     CENTER: ESC + 'a' + '\x01',  // Center alignment
@@ -990,9 +993,14 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     for (const l of wrapLines(`${fam.tutor_nombre ? 'Tutor' : 'Familia'}: ${quien}`)) lines.push(l);
     lines.push(`Año escolar: ${d.anio?.nombre || ''}`);
     lines.push(dashLine());
+    // (25/11/2026) Pedido del colegio: letra más grande en lo que se cobra.
+    // La impresora no tiene tamaños intermedios: doble alto (mismo ancho, 42
+    // columnas) desde las líneas hasta las formas de pago; "Mensualidad" se
+    // abrevia "Mens." para que quepa en una línea.
+    lines.push(CMD.DOUBLE_H);
     for (const e of d.estudiantes) {
         for (const l of e.lineas) {
-            const desc = `${String(l.descripcion || '').trim() || '(sin descripción)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
+            const desc = `${abreviarConcepto(String(l.descripcion || '').trim()) || '(sin descripción)'}${varios ? ` (${e.nombre.split(' ')[0]})` : ''}`;
             lines.push(...fila(desc, l.moneda === 'USD' ? `US$${n2(l.monto_moneda)}` : n2(Number(l.monto) + Number(l.descuento || 0))));
         }
     }
@@ -1008,6 +1016,7 @@ export function buildReciboColegioEscPos(d: ReciboColegioData): string {
     for (const fp of (p.formas_pago || []).filter((x) => Number(x.monto) > 0)) {
         lines.push(...fila(`${fp.forma}${fp.referencia ? ` #${fp.referencia}` : ''}`, n2(fp.monto)));
     }
+    lines.push(CMD.NORMAL);
     lines.push(dashLine());
     lines.push(leftRight('Pendiente del año', n2(pendiente)));
     if (d.proximoPago) for (const l of wrapLines(`Próximo pago: ${d.proximoPago}`)) lines.push(l);
