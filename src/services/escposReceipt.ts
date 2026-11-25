@@ -687,6 +687,7 @@ interface ReciboIngresoData {
         referencia?: string;
         monto_abono?: number;
     }>;
+    concepto?: string;
     formasPago?: Array<{
         forma?: string;
         referencia?: string;
@@ -718,11 +719,20 @@ export function buildReciboIngresoEscPos(
     lines.push(`${CMD.BOLD_ON}CLIENTE: ${(recibo.clienteNombre || 'N/A').toUpperCase()}${CMD.BOLD_OFF}`);
 
     // ── Abonos ──
+    // (25/11/2026) Sin facturas (cobro del colegio, otros ingresos): el concepto.
+    const sinFacturas = !(recibo.abonos || []).length;
     lines.push(dashLine());
-    lines.push(CMD.BOLD_ON + 'FACTURAS ABONADAS:' + CMD.BOLD_OFF);
-    lines.push(leftRight('REFERENCIA', 'ABONO'));
-    for (const a of (recibo.abonos || [])) {
-        lines.push(leftRight(a.referencia || '---', fmt(a.monto_abono || 0)));
+    if (sinFacturas) {
+        if (recibo.concepto) {
+            lines.push(CMD.BOLD_ON + 'CONCEPTO:' + CMD.BOLD_OFF);
+            for (const l of wrapLines(recibo.concepto)) lines.push(l);
+        }
+    } else {
+        lines.push(CMD.BOLD_ON + 'FACTURAS ABONADAS:' + CMD.BOLD_OFF);
+        lines.push(leftRight('REFERENCIA', 'ABONO'));
+        for (const a of (recibo.abonos || [])) {
+            lines.push(leftRight(a.referencia || '---', fmt(a.monto_abono || 0)));
+        }
     }
 
     // ── Formas de pago ──
@@ -736,9 +746,9 @@ export function buildReciboIngresoEscPos(
 
     // ── Totales ──
     lines.push(dashLine());
-    lines.push(totalsRow('Balance Anterior:', fmt(recibo.balanceAnterior || 0)));
+    if (!sinFacturas) lines.push(totalsRow('Balance Anterior:', fmt(recibo.balanceAnterior || 0)));
     lines.push(CMD.BOLD_ON + totalsRow('TOTAL PAGADO:', fmt(recibo.totalPagado || 0)) + CMD.BOLD_OFF);
-    lines.push(CMD.BOLD_ON + totalsRow('Balance Actual:', fmt(recibo.balanceActual || 0)) + CMD.BOLD_OFF);
+    if (!sinFacturas) lines.push(CMD.BOLD_ON + totalsRow('Balance Actual:', fmt(recibo.balanceActual || 0)) + CMD.BOLD_OFF);
 
     // ── Footer ──
     lines.push('');

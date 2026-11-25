@@ -1042,7 +1042,11 @@ export const printDevolucionPOS = (devolucion, factura, cliente, details) => {
 };
 
 export const printReciboPOS = (reciboData) => {
-  const { numero, fecha, clienteNombre, balanceAnterior, totalPagado, balanceActual, abonos, formasPago } = reciboData;
+  const { numero, fecha, clienteNombre, balanceAnterior, totalPagado, balanceActual, abonos, formasPago, concepto } = reciboData;
+  // (25/11/2026) Sin facturas abonadas (cobro del colegio, otros ingresos): sale
+  // el concepto y no los balances del cliente, que ahí no aplican.
+  const sinFacturas = !(abonos || []).length;
+  const escTxt = (x) => String(x ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const fechaStr = formatInTimeZone(new Date(fecha), 'd/L/yyyy');
   const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
 
@@ -1091,6 +1095,8 @@ export const printReciboPOS = (reciboData) => {
       </div>
 
       <div class="separator"></div>
+      ${sinFacturas ? (concepto ? `<div class="bold" style="font-size: 13px; margin-bottom: 2px;">CONCEPTO:</div>
+      <div style="font-size: 13px; white-space: pre-wrap;">${escTxt(concepto)}</div>` : '') : `
       <div class="bold" style="font-size: 13px; margin-bottom: 2px;">FACTURAS ABONADAS:</div>
       <table>
         <thead>
@@ -1107,7 +1113,7 @@ export const printReciboPOS = (reciboData) => {
             </tr>
           `).join('')}
         </tbody>
-      </table>
+      </table>`}
 
       <div class="separator"></div>
       <div class="bold" style="font-size: 13px; margin-bottom: 2px;">DETALLE DE PAGO:</div>
@@ -1124,18 +1130,18 @@ export const printReciboPOS = (reciboData) => {
 
       <div class="separator"></div>
       <div style="margin-top: 4px;">
-        <div style="display: flex; justify-content: space-between; font-size: 13px;">
+        ${sinFacturas ? '' : `<div style="display: flex; justify-content: space-between; font-size: 13px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
-        </div>
+        </div>`}
         <div class="total-row">
           <span>TOTAL PAGADO:</span>
           <span>${formatCurrency(totalPagado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 2px;">
+        ${sinFacturas ? '' : `<div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 2px;">
           <span>Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
-        </div>
+        </div>`}
       </div>
 
       <div class="text-center" style="margin-top: 15px; font-size: 12px;">
@@ -1151,7 +1157,11 @@ export const printReciboPOS = (reciboData) => {
 };
 
 export const printRecibo4Pulgadas = (reciboData) => {
-  const { numero, fecha, clienteNombre, balanceAnterior, totalPagado, balanceActual, abonos, formasPago } = reciboData;
+  const { numero, fecha, clienteNombre, balanceAnterior, totalPagado, balanceActual, abonos, formasPago, concepto } = reciboData;
+  // (25/11/2026) Sin facturas abonadas (cobro del colegio, otros ingresos): sale
+  // el concepto y no los balances del cliente, que ahí no aplican.
+  const sinFacturas = !(abonos || []).length;
+  const escTxt = (x) => String(x ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const fechaStr = formatInTimeZone(new Date(fecha), 'd/L/yyyy');
   const horaStr = formatInTimeZone(new Date(), 'hh:mm a');
 
@@ -1197,6 +1207,8 @@ export const printRecibo4Pulgadas = (reciboData) => {
         <div style="margin-top: 5px;"><span class="bold">CLIENTE:</span> ${clienteNombre.toUpperCase()}</div>
       </div>
 
+      ${sinFacturas ? (concepto ? `<div class="bold" style="font-size: 13px; margin-bottom: 2px;">CONCEPTO:</div>
+      <div style="font-size: 13px; white-space: pre-wrap;">${escTxt(concepto)}</div>` : '') : `
       <div class="bold" style="font-size: 13px; margin-bottom: 3px; background: #eee; padding: 3px;">FACTURAS ABONADAS:</div>
       <table>
         <thead>
@@ -1213,7 +1225,7 @@ export const printRecibo4Pulgadas = (reciboData) => {
             </tr>
           `).join('')}
         </tbody>
-      </table>
+      </table>`}
 
       <div class="separator"></div>
       <div class="bold" style="font-size: 13px; margin-bottom: 3px; background: #eee; padding: 3px;">DETALLE DE PAGO:</div>
@@ -1229,18 +1241,18 @@ export const printRecibo4Pulgadas = (reciboData) => {
       </table>
 
       <div style="margin-top: 10px; background: #f9f9f9; padding: 5px; border: 1px solid #ddd;">
-        <div style="display: flex; justify-content: space-between; font-size: 13px;">
+        ${sinFacturas ? '' : `<div style="display: flex; justify-content: space-between; font-size: 13px;">
           <span>Balance Anterior:</span>
           <span>${formatCurrency(balanceAnterior)}</span>
-        </div>
+        </div>`}
         <div class="total-row">
           <span>TOTAL PAGADO:</span>
           <span>${formatCurrency(totalPagado)}</span>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 13.5px; margin-top: 4px;">
+        ${sinFacturas ? '' : `<div style="display: flex; justify-content: space-between; font-size: 13.5px; margin-top: 4px;">
           <span class="bold">Balance Actual:</span>
           <span class="bold">${formatCurrency(balanceActual)}</span>
-        </div>
+        </div>`}
       </div>
 
       <div class="footer">

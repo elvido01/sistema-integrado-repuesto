@@ -256,6 +256,7 @@ const ReporteTransaccionesDiariasPage = () => {
         const { data: recibo, error } = await supabase
           .from('recibos_ingreso')
           .select('*, clientes(*), recibos_ingreso_detalle(*, facturas(numero, total))')
+          .eq('tenant_id', tenantId)   // el número se repite entre empresas (empresa hermana)
           .eq('numero', transaction.transaccion)
           .maybeSingle();
 
@@ -263,6 +264,20 @@ const ReporteTransaccionesDiariasPage = () => {
         if (!recibo) {
           toast({ title: 'No encontrado', description: `Recibo ${transaction.transaccion} no encontrado.`, variant: 'destructive' });
           return;
+        }
+
+        // (25/11/2026) Cobro del colegio: se reimprime SU recibo (estudiante,
+        // meses, descuento del año completo), no el genérico de facturas.
+        if (recibo.origen === 'colegio') {
+          const { data: pagoCol } = await supabase.from('edu_pagos').select('id')
+            .eq('tenant_id', tenantId).eq('recibo_ingreso_id', recibo.id).maybeSingle();
+          if (pagoCol) {
+            const { imprimirReciboColegio } = await import('@/pages/colegio/CajaColegioPage');
+            let formato = 'ticket';
+            try { const f = localStorage.getItem('colegio_formato_recibo'); if (f === 'hoja') formato = 'hoja'; } catch { /* sin almacenamiento */ }
+            await imprimirReciboColegio(pagoCol.id, tenantId, formato);
+            return;
+          }
         }
 
         const abonos = (recibo.recibos_ingreso_detalle || []).map(d => ({
@@ -290,7 +305,8 @@ const ReporteTransaccionesDiariasPage = () => {
           totalPagado,
           balanceActual,
           abonos,
-          formasPago
+          formasPago,
+          concepto: recibo.concepto || '',
         };
 
         try {
