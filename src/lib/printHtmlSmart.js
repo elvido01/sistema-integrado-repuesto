@@ -29,6 +29,19 @@ export function setSilentPrintEnabled(on) {
     localStorage.setItem(PREF_KEY, on ? '1' : '0');
 }
 
+// (26/11/2026) El "largo exacto" (abajo) queda como OPCIÓN DE ESTA PC, apagada.
+// Encendido para todos encogía la factura (Morla FT-5183: letra diminuta y QR
+// que no se lee): si el papel del driver no es de 80 mm x ese largo, Chrome
+// ENCOGE la página para que quepa. Lo de siempre (papel del driver, 1:1) es lo
+// seguro; solo la PC cuyo driver tira papel en blanco hasta el corte lo enciende.
+const LARGO_KEY = 'mf_ticket_largo_exacto';
+export function isTicketLargoExacto() {
+    try { return localStorage.getItem(LARGO_KEY) === '1'; } catch (_) { return false; }
+}
+export function setTicketLargoExacto(on) {
+    try { localStorage.setItem(LARGO_KEY, on ? '1' : '0'); } catch (_) { /* noop */ }
+}
+
 // (24/11/2026) Tickets térmicos: el largo EXACTO de la página.
 // Las plantillas piden `@page { size: 80mm auto }`, pero "ancho auto" NO es
 // un tamaño válido en CSS: Chrome descarta la regla y usa el papel del
@@ -92,7 +105,7 @@ function imprimirTicketMedido(html, anchoPagina) {
 // Fallback histórico: iframe oculto + window.print() (lo que se hacía siempre)
 export function printViaBrowser(html) {
     const ticket = TICKET_AUTO.exec(html || '');
-    if (ticket) { imprimirTicketMedido(html, ticket[1]); return; }
+    if (ticket && isTicketLargoExacto()) { imprimirTicketMedido(html, ticket[1]); return; }
     const iframe = document.createElement('iframe');
     Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
     document.body.appendChild(iframe);

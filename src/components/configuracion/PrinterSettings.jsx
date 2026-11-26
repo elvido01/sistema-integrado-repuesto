@@ -22,7 +22,7 @@ import {
   agentClearStalePrintJobs,
 } from '@/services/motoflowPrintAgent';
 import { setPreferredBackend, getPreferredBackend, getTipoImpresora, setTipoImpresora } from '@/services/printerAdapter';
-import { isSilentPrintEnabled, setSilentPrintEnabled } from '@/lib/printHtmlSmart';
+import { isSilentPrintEnabled, setSilentPrintEnabled, isTicketLargoExacto, setTicketLargoExacto } from '@/lib/printHtmlSmart';
 
 // localStorage keys para impresoras QZ Tray (todas las Windows)
 const QZ_RECEIPT_KEY = 'qz_receipt_printer';
@@ -58,6 +58,7 @@ const PrinterSettings = () => {
   // Selector de backend activo
   const [backend, setBackend] = useState(() => getPreferredBackend());
   const [silentPrint, setSilentPrint] = useState(() => isSilentPrintEnabled());
+  const [largoExacto, setLargoExacto] = useState(() => isTicketLargoExacto());
 
 
   const handleBackendChange = (newBackend) => {
@@ -235,6 +236,19 @@ const PrinterSettings = () => {
           <span className="text-[11px] text-slate-700">
             <b>Imprimir SIN diálogo del navegador</b> (usa el agente para facturas, tickets y demás documentos).
             Las facturas y tickets POS salen directo a la impresora, sin la ventana de impresión. Requiere el Motoflow Print Agent corriendo.
+          </span>
+        </label>
+        {/* (26/11/2026) Solo para la PC cuyo driver tira papel en blanco hasta el corte */}
+        <label className="flex items-start gap-2 mt-3 pt-3 border-t border-slate-200 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 w-4 h-4 accent-emerald-600"
+            checked={largoExacto}
+            onChange={(e) => { setLargoExacto(e.target.checked); setTicketLargoExacto(e.target.checked); }}
+          />
+          <span className="text-[11px] text-slate-700">
+            <b>Cortar el ticket al largo exacto</b> (solo con el diálogo del navegador). Enciéndelo solo si en esta PC
+            sale papel en blanco después del ticket. Si con esto la letra o el QR salen pequeños, apágalo.
           </span>
         </label>
         {silentPrint && !agentAvailable && (
