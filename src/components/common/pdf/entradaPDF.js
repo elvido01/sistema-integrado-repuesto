@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { pieEmpresa, RESERVA_PIE, espacioPara } from './pieEmpresa';
 
 const formatCurrency = (value) => {
     return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -41,8 +42,7 @@ export const generateEntradaPDF = (entrada, almacen, detalles, empresa = {}) => 
     // Address/Contact
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (empresa.direccion) doc.text(empresa.direccion, pageWidth / 2, 12, { align: 'center' });
-    if (empresa.telefono) doc.text(empresa.telefono, pageWidth / 2, 17, { align: 'center' });
+    // (26/11/2026) Dirección y teléfono van al pie de cada página (pieEmpresa).
 
     // Right Header Section
     doc.setFontSize(10);
@@ -86,6 +86,7 @@ export const generateEntradaPDF = (entrada, almacen, detalles, empresa = {}) => 
     ]);
 
     autoTable(doc, {
+        margin: { bottom: RESERVA_PIE },   // que la tabla no se meta debajo del pie
         head: [tableColumn],
         body: tableRows,
         startY: 70,
@@ -98,7 +99,8 @@ export const generateEntradaPDF = (entrada, almacen, detalles, empresa = {}) => 
         }
     });
 
-    let currentY = doc.lastAutoTable.finalY + 15;
+    // Totales, notas, firmas juntos y por encima del pie.
+    let currentY = espacioPara(doc, doc.lastAutoTable.finalY + 15, 48);
 
     // --- Summary & Signature ---
     doc.setFontSize(11);
@@ -121,5 +123,6 @@ export const generateEntradaPDF = (entrada, almacen, detalles, empresa = {}) => 
     doc.line(130, signatureY, 190, signatureY);
     doc.text("Recibido por (Almacén)", 140, signatureY + 5);
 
+    pieEmpresa(doc, empresa);
     openPdf(doc, `Entrada-${entrada.numero}.pdf`);
 };

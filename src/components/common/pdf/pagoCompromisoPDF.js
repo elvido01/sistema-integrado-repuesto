@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { pieEmpresa, RESERVA_PIE, espacioPara } from './pieEmpresa';
 
 const formatCurrency = (value) => {
     return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -13,6 +14,10 @@ const formatCurrency = (value) => {
 const formatDate = (date) => {
     if (!date) return 'N/A';
     try {
+        // Una fecha pelada ('2026-11-26') leída con new Date() es medianoche UTC =
+        // 8 PM del día ANTERIOR aquí: el comprobante salía con un día de menos.
+        const soloFecha = String(date).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
         return formatInTimeZone(new Date(date), 'dd/MM/yyyy');
     } catch (e) {
         return 'N/A';
@@ -41,8 +46,7 @@ export const generatePagoCompromisoPDF = (pago, empresa = {}) => {
     // Address/Contact
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (empresa.direccion) doc.text(empresa.direccion, pageWidth / 2, 12, { align: 'center' });
-    if (empresa.telefono) doc.text(empresa.telefono, pageWidth / 2, 17, { align: 'center' });
+    // (26/11/2026) Dirección y teléfono van al pie de cada página (pieEmpresa).
 
     // Right Header Section
     doc.setFontSize(10);
@@ -78,6 +82,7 @@ export const generatePagoCompromisoPDF = (pago, empresa = {}) => {
     ]];
 
     autoTable(doc, {
+        margin: { bottom: RESERVA_PIE },   // que la tabla no se meta debajo del pie
         head: [tableColumn],
         body: tableRows,
         startY: 66,
@@ -86,7 +91,8 @@ export const generatePagoCompromisoPDF = (pago, empresa = {}) => {
         columnStyles: { 3: { halign: 'right' } }
     });
 
-    let currentY = doc.lastAutoTable.finalY + 15;
+    // Total y firmas juntos y por encima del pie.
+    let currentY = espacioPara(doc, doc.lastAutoTable.finalY + 15, 38);
 
     // --- Totales ---
     const totalsX = 140;
@@ -111,5 +117,6 @@ export const generatePagoCompromisoPDF = (pago, empresa = {}) => {
     doc.line(130, signatureY, 190, signatureY);
     doc.text("Recibido por", 145, signatureY + 5);
 
+    pieEmpresa(doc, empresa);
     openPdf(doc, `PagoCompromiso-${numero}.pdf`);
 };

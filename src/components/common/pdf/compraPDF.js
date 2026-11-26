@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
 import { openPdf } from '@/components/common/pdf/openPdf';
+import { pieEmpresa, RESERVA_PIE, espacioPara } from './pieEmpresa';
 
 const formatCurrency = (value) => {
     return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -13,6 +14,10 @@ const formatCurrency = (value) => {
 const formatDate = (date) => {
     if (!date) return 'N/A';
     try {
+        // Una fecha pelada ('2026-11-26') leída con new Date() es medianoche UTC =
+        // 8 PM del día ANTERIOR aquí: el comprobante salía con un día de menos.
+        const soloFecha = String(date).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
         return formatInTimeZone(new Date(date), 'dd/MM/yyyy');
     } catch (e) {
         return 'N/A';
@@ -35,8 +40,7 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
     // Address/Contact
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (empresa.direccion) doc.text(empresa.direccion, pageWidth / 2, 12, { align: 'center' });
-    if (empresa.telefono) doc.text(empresa.telefono, pageWidth / 2, 17, { align: 'center' });
+    // (26/11/2026) Dirección y teléfono van al pie de cada página (pieEmpresa).
 
     // Right Header Section
     doc.setFontSize(9);
@@ -92,7 +96,8 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
         // Calculate ITBIS correctly based on its pct
         // If itbis is already included in importe, we need the formula (importe - (importe / (1 + itbis_pct)))
         // If itbis is NOT included, then it's (base * itbis_pct)
-        const itbisPct = item.itbis_pct || 0.18;
+        // ?? y no ||: un 0 guardado es EXENTO, no "sin dato" (salía con 18%).
+        const itbisPct = item.itbis_pct ?? 0.18;
         let itbisAmount = 0;
         
         if (compra.itbis_incluido) {
@@ -147,15 +152,17 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
             6: { halign: 'right', cellWidth: 20 },
             7: { halign: 'right', cellWidth: 25 },
         },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin, bottom: RESERVA_PIE },   // que la tabla no se meta debajo del pie
         didDrawPage: (data) => {
             // Line below header rows
             doc.setLineWidth(0.1);
-            doc.line(margin, data.settings.startY + 7, pageWidth - margin, data.settings.startY + 7);
+            // Solo en la primera página: en las siguientes la tabla empieza arriba y la raya cortaba filas.
+            if (data.pageNumber === 1) doc.line(margin, data.settings.startY + 7, pageWidth - margin, data.settings.startY + 7);
         }
     });
 
-    let finalY = doc.lastAutoTable.finalY + 10;
+    // Firma + recuadro de totales (45 mm) juntos y por encima del pie.
+    let finalY = espacioPara(doc, doc.lastAutoTable.finalY + 10, 48);
 
     // --- Footer Section ---
     // Left side: Signature
@@ -190,5 +197,6 @@ export const generateCompraPDF = (compra, suplidor, detalles, usuario, empresa =
     addTotalLine("Total de la Compra", formatCurrency(compra.total_compra), 40, true);
 
     // Abrir el PDF de forma confiable (blob URL; about:blank con embed fallaba en Chrome)
+    pieEmpresa(doc, empresa);
     openPdf(doc, `Compra-OC-${docNumber}.pdf`);
 };

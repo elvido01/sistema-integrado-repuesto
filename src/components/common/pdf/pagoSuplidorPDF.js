@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import { openPdf } from './openPdf';
 import autoTable from 'jspdf-autotable';
 import { formatInTimeZone } from '@/lib/dateUtils';
+import { pieEmpresa, RESERVA_PIE, espacioPara } from './pieEmpresa';
 
 const formatCurrency = (value) => {
     return (parseFloat(value) || 0).toLocaleString('en-US', {
@@ -13,6 +14,10 @@ const formatCurrency = (value) => {
 const formatDate = (date) => {
     if (!date) return 'N/A';
     try {
+        // Una fecha pelada ('2026-11-26') leída con new Date() es medianoche UTC =
+        // 8 PM del día ANTERIOR aquí: el comprobante salía con un día de menos.
+        const soloFecha = String(date).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
         return formatInTimeZone(new Date(date), 'dd/MM/yyyy');
     } catch (e) {
         return 'N/A';
@@ -32,11 +37,9 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     doc.setFontSize(12);
     doc.text("COMPROBANTE DE PAGO A SUPLIDOR", margin, 28);
 
-    // Address/Contact
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    if (empresa.direccion) doc.text(empresa.direccion, pageWidth / 2, 12, { align: 'center' });
-    if (empresa.telefono) doc.text(empresa.telefono, pageWidth / 2, 17, { align: 'center' });
+    // (26/11/2026) Dirección y teléfono van al PIE de cada página. Arriba se
+    // encimaban con el nombre de la empresa y salían repetidos cuando la
+    // empresa tiene el mismo texto en los dos campos (Motopréstamos).
 
     // Right Header Section
     doc.setFontSize(10);
@@ -81,6 +84,7 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     });
 
     autoTable(doc, {
+        margin: { bottom: RESERVA_PIE },   // que la tabla no se meta debajo del pie
         head: [tableColumn],
         body: tableRows,
         startY: 70,
@@ -92,7 +96,8 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
         }
     });
 
-    let currentY = doc.lastAutoTable.finalY + 15;
+    // El título y al menos el encabezado de su tabla, juntos y por encima del pie.
+    let currentY = espacioPara(doc, doc.lastAutoTable.finalY + 15, 22);
 
     // --- Table 2: Formas de Pago ---
     doc.setFont('helvetica', 'bold');
@@ -100,12 +105,13 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
 
     const paymentColumn = ["FORMA", "REFERENCIA/BANCO", "MONTO"];
     const paymentRows = formasPago.map(f => [
-        f.forma.toUpperCase(),
+        String(f.forma || '').toUpperCase(),
         f.referencia || '---',
         formatCurrency(f.monto)
     ]);
 
     autoTable(doc, {
+        margin: { bottom: RESERVA_PIE },   // que la tabla no se meta debajo del pie
         head: [paymentColumn],
         body: paymentRows,
         startY: currentY + 5,
@@ -140,6 +146,11 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     }));
     const etiquetaX = valorX - anchoValor - 4;  // 4mm de aire entre las dos
 
+    // (26/11/2026) Los totales (~13 mm) tampoco se salen de la hoja.
+    if (currentY + 14 > doc.internal.pageSize.height - RESERVA_PIE) {
+        doc.addPage();
+        currentY = 30;
+    }
     doc.setFont('helvetica', 'bold');
     filas.forEach(([etiqueta, valor, tam], i) => {
         const y = currentY + (i === 2 ? 13 : i * 6);
@@ -150,13 +161,23 @@ export const generatePagoSuplidorPDF = (pago, suplidor, detalles, formasPago, em
     });
 
     // --- Signatures ---
-    const signatureY = currentY + 30;
+    let signatureY = currentY + 30;
+    // (26/11/2026) Firmas + etiquetas (~6 mm) no pueden caer en el pie ni
+    // salirse de la hoja: si no caben, van en una página nueva.
+    const altoHoja = doc.internal.pageSize.height;
+    if (signatureY + 6 > altoHoja - RESERVA_PIE) {
+        doc.addPage();
+        signatureY = 40;
+    }
     doc.line(margin, signatureY, margin + 60, signatureY);
     doc.setFontSize(9);
     doc.text("Entregado por", margin + 18, signatureY + 5);
 
     doc.line(130, signatureY, 190, signatureY);
     doc.text("Recibido por (Suplidor)", 140, signatureY + 5);
+
+    // --- Pie de página: dirección y teléfono, sin repetir ---
+    pieEmpresa(doc, empresa, margin);
 
     openPdf(doc, `PagoSuplidor-${pago.numero}.pdf`);
 };

@@ -284,12 +284,12 @@
     "src/components/bancos/CuentaBancariaSelect.jsx": "02065c576fc486c1",
     "src/components/bancos/EfectivoDelDia.jsx": "e74854edc35b5c32",
     "src/components/common/pdf/comisionPDF.js": "9670fced39020a00",
-    "src/components/common/pdf/compraPDF.js": "80eeee8c3e800cc9",
+    "src/components/common/pdf/compraPDF.js": "ebd11dd79e94430a",
     "src/components/common/pdf/devolucionPDF.js": "9787b475fee694e8",
     "src/components/common/pdf/facturaCartaPDF.js": "9268cebc44ed6364",
     "src/components/common/pdf/facturaPDF.js": "43171a4cdf6579ba",
-    "src/components/common/pdf/pagoCompromisoPDF.js": "b6467cc47e39114e",
-    "src/components/common/pdf/pagoSuplidorPDF.js": "824f535b5c3e07e3",
+    "src/components/common/pdf/pagoCompromisoPDF.js": "a72bd506ffd4865d",
+    "src/components/common/pdf/pagoSuplidorPDF.js": "a943bcfbb57b7ea0",
     "src/components/common/pdf/reciboPDF.js": "5f98be62fb5785d5",
     "src/components/common/pdf/reciboPagoFinancieraPDF.js": "2406de5e17bc89cc",
     "src/components/compras/AgenteCambioSuplidor.jsx": "5a6e7b9765ba4f47",
@@ -489,14 +489,6 @@
     "sql/blindaje_cobro_prestamo_otra_empresa.sql": "85c821649f108ef0"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: RNC editable con cliente escogido solo se aplica con Enter/lupa (F10 lo aplica primero), se revierte si falla o al salir sin aplicar, vacio+Enter quita cliente y limpia nombre manual, bloqueado editando factura hecha.",
-      "archivos": [
-        "src/components/ventas/VentasHeader.jsx",
-        "src/pages/VentasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-11",
       "nota": "code-review high: cotejo incluyen ITBIS recordado por empresa en la PC; al llegar la empresa se aplica y se releen las lineas tecleadas; no se guarda sin empresa; apagado se marca en ambar.",
@@ -1036,6 +1028,15 @@
         "sql/anular_cobro_prestamo_caido_en_caminero_1311.sql",
         "sql/anular_cobro_prestamo_caido_en_motoprestamos_2511.sql",
         "sql/blindaje_cobro_prestamo_otra_empresa.sql"
+      ]
+    },
+    {
+      "fecha": "2026-11-26",
+      "nota": "code-review high (2 pasadas): pie de página compartido (pieEmpresa) en 6 comprobantes, sin repetir; total/firmas/título de formas de pago no caen en el pie (espacioPara); tablas con margen inferior; fecha pelada sin día de menos; ITBIS 0 en compra ya no sale 18%; raya del encabezado solo en página 1; empresa null",
+      "archivos": [
+        "src/components/common/pdf/compraPDF.js",
+        "src/components/common/pdf/pagoCompromisoPDF.js",
+        "src/components/common/pdf/pagoSuplidorPDF.js"
       ]
     }
   ]
