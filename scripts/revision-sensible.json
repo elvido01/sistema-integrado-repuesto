@@ -340,7 +340,7 @@
     "src/components/ventas/VentasTable.jsx": "ea37ab94cbea29f8",
     "src/contexts/ComprasContext.jsx": "b13374173cfc10f7",
     "src/contexts/FacturacionContext.jsx": "62d061043619e679",
-    "src/hooks/useVentas.js": "7c364f077af2ff11",
+    "src/hooks/useVentas.js": "3d3d2ff420121c32",
     "src/lib/almacenUtils.js": "8db6d7fc5022fc4f",
     "src/lib/chasisFactura.js": "f2bdf117932626a9",
     "src/lib/comisionUnidad.js": "dedd9a888a8d9320",
@@ -487,18 +487,10 @@
     "sql/anular_cobro_prestamo_caido_en_caminero_1311.sql": "5fee9850b2537c0d",
     "sql/anular_cobro_prestamo_caido_en_motoprestamos_2511.sql": "f4a9f8f4db1033e5",
     "sql/blindaje_cobro_prestamo_otra_empresa.sql": "85c821649f108ef0",
-    "sql/cxp_motores_del_sur_28845_en_pagares.sql": "b906b50584ff0a20"
+    "sql/cxp_motores_del_sur_28845_en_pagares.sql": "b906b50584ff0a20",
+    "sql/cxp_motores_del_sur_28895_en_pagares.sql": "42d17593f7be56bc"
   },
   "historial": [
-    {
-      "fecha": "2026-11-12",
-      "nota": "code-review high: retencion en pantalla segun el comprobante real de la factura (preview e-CF o NCF de la factura editada), igual que recalcular_retenciones_factura; nota de NG 02-2026 solo si aplica. App movil: lupa DGII en el buscador de clientes con guardas de doble toque y resultado tardio.",
-      "archivos": [
-        "src/components/ventas/LineasServicios.jsx",
-        "src/hooks/useVentas.js",
-        "src/pages/VentasPage.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-12",
       "nota": "code-review high: vista de telefono en Ventas; 10 hallazgos, arreglados 8 (edicion de linea vs -/+ y papelera, pago mixto y referencia, Eliminar linea, teclado al editar, doble toque cliente, etiqueta comprobante, Safari viejo, archivo sin git); 1 aceptado (ventana <768px en PC cambia a vista telefono sin perder la venta); 1 menor sin cambio (calculadora duplicada)",
@@ -1039,6 +1031,14 @@
       "archivos": [
         "sql/cxp_motores_del_sur_28845_en_pagares.sql",
         "src/components/configuracion/DgiiCertificadoUploader.jsx"
+      ]
+    },
+    {
+      "fecha": "2026-11-26",
+      "nota": "code-review high: salto NCF limitado a empresas sin ninguna secuencia y tipos sin RNC; pagares 28895/28845 verificados en BD (original sin NCF/saldo inicial/ITBIS, las 6 iguales); casilla movida",
+      "archivos": [
+        "sql/cxp_motores_del_sur_28895_en_pagares.sql",
+        "src/hooks/useVentas.js"
       ]
     }
   ]
