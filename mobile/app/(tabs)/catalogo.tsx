@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, FlatList, TextInput, TouchableOpacity, ActivityIndicator, Modal, Image, Alert } from 'react-native';
+import { View, Text, FlatList, TextInput, TouchableOpacity, ActivityIndicator, Modal, Image, Alert, AppState } from 'react-native';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchProductos } from '@/src/services/productService';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { useCartStore } from '@/src/store/useCartStore';
 import { Search, ScanBarcode, X, ArrowLeft, Plus, Minus, Camera, Share2 } from 'lucide-react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import debounce from 'lodash.debounce';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
@@ -279,6 +279,34 @@ export default function CatalogoScreen() {
     enabled: !!tenantId,
   });
 
+  // (26/11/2026) Al volver al catálogo (otra pestaña, el detalle, o la app
+  // desde segundo plano) se pide otra vez: una venta, compra o ajuste (aquí,
+  // en la PC u otro teléfono) cambia la existencia y la lista en caché seguía
+  // mostrando la vieja hasta salir y entrar de la app. Solo la PRIMERA página:
+  // refetch() de una lista infinita vuelve a pedir todas las ya cargadas.
+  // La primera entrada no repite (ya la pidió la consulta al montarse).
+  const claveLista = ['productos', tenantId, debouncedSearch, debouncedMarca, debouncedModelo, includeZeroStock];
+  const refrescarArriba = useRef<() => void>(() => {});
+  refrescarArriba.current = () => {
+    if (!tenantId) return;   // cambiando de empresa / cerrando sesión
+    queryClient.setQueryData(claveLista, (d: any) => (d?.pages?.length > 1
+      ? { pages: d.pages.slice(0, 1), pageParams: d.pageParams.slice(0, 1) } : d));
+    refetch();
+  };
+  const yaEntro = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (yaEntro.current) refrescarArriba.current();
+    yaEntro.current = true;
+    const app = AppState.addEventListener('change', (st) => { if (st === 'active') refrescarArriba.current(); });
+    return () => app.remove();
+  }, []));
+  // La ruedita de "jalar para refrescar" solo cuando se jala (no en el refresco automático).
+  const [jalando, setJalando] = useState(false);
+  const alJalar = useCallback(async () => {
+    setJalando(true);
+    try { await refetch(); } finally { setJalando(false); }
+  }, [refetch]);
+
   const updateSearch = useCallback(
     debounce((text: string) => {
       setDebouncedSearch(text);
@@ -502,8 +530,8 @@ export default function CatalogoScreen() {
               <Text className="text-gray-500 text-center text-lg">No se encontraron productos.</Text>
             </View>
           }
-          onRefresh={refetch}
-          refreshing={isRefetching && !isFetchingNextPage}
+          onRefresh={alJalar}
+          refreshing={jalando}
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 40) }}
           removeClippedSubviews={true}
           maxToRenderPerBatch={10}

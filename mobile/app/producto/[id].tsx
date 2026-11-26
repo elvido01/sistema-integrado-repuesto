@@ -12,7 +12,6 @@ import {
   Switch, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/src/supabase/client';
 import { useCartStore } from '@/src/store/useCartStore';
 import { ArrowLeft, ShoppingCart, Share2, Package, Pencil, X, Save } from 'lucide-react-native';
@@ -50,7 +49,6 @@ export default function ProductoDetailScreen() {
   const [form, setForm] = useState<Form | null>(null);
   const [guardando, setGuardando] = useState(false);
   const { addItem } = useCartStore();
-  const queryClient = useQueryClient();
   const empresa = useAuthStore((s) => s.empresa);
   // (09/11/2026) Ventanas y aluminio: antes de agregar se escoge color y Unidad/Pies.
   const esAluminio = empresa?.tipo_negocio === 'aluminio';
@@ -125,8 +123,7 @@ export default function ProductoDetailScreen() {
     setProducto((p: any) => ({ ...p, ...(data as any) }));
     if ((data as any)?.existencia != null) setExistencia(Number((data as any).existencia));
     setEditando(false);
-    // El catálogo guarda la lista en caché: que la vuelva a pedir con el precio nuevo.
-    queryClient.invalidateQueries({ queryKey: ['productos'] });
+    // El catálogo vuelve a pedir la lista al volver a él (precio nuevo incluido).
     Alert.alert('Guardado', 'La ficha del producto quedó actualizada.');
   };
 
