@@ -26,6 +26,18 @@ const CLIENTE_GENERICO = {
 
 const DEFAULT_ITBIS_PCT = 0.18;
 
+// (26/11/2026) EMPRESA SIN NCF DE PAPEL: no se pregunta en cada venta.
+// La cafetería del colegio no tiene secuencias: cada venta iba a get_next_ncf
+// (~0.6 s antes del papel) y sacaba el aviso rojo "Sin NCF disponible" UNA
+// VEZ POR VENTA. Se recuerda 10 min por empresa y tipo: el aviso sale una
+// vez y la venta no espera. Si la vista previa encuentra secuencia (la
+// cargaron), se olvida en el acto y la próxima venta la usa.
+const SIN_NCF_MS = 10 * 60 * 1000;
+const sinNcfHasta = new Map(); // `${tenant}:${tipo}` → ms
+const sinNcfReciente = (tenant, tipo) => (sinNcfHasta.get(`${tenant}:${tipo}`) || 0) > Date.now();
+const marcarSinNcf = (tenant, tipo) => sinNcfHasta.set(`${tenant}:${tipo}`, Date.now() + SIN_NCF_MS);
+const olvidarSinNcf = (tenant, tipo) => sinNcfHasta.delete(`${tenant}:${tipo}`);
+
 const normalizeItbisPct = (value) => {
   if (value === null || value === undefined || value === '') return DEFAULT_ITBIS_PCT;
   const parsed = Number(value);
@@ -446,6 +458,7 @@ export const useVentas = () => {
         .maybeSingle();
 
       if (seq) {
+        olvidarSinNcf(tenantId, tipoNcf);
         const siguiente = (!seq.ultimo_emitido || seq.ultimo_emitido < seq.secuencia_desde)
           ? seq.secuencia_desde
           : seq.ultimo_emitido + 1;
@@ -1291,7 +1304,7 @@ export const useVentas = () => {
       // es el e-NCF que pone emitir-fiscal al guardar: no se busca NCF de
       // papel (D Mario no tiene, y salía el aviso rojo "Sin NCF disponible").
       const conEcfEnProduccion = fiscalActivo && fiscalModo === 'produccion';
-      if (!editingFacturaId && tipoNcfCliente && !conEcfEnProduccion && !esFree) {
+      if (!editingFacturaId && tipoNcfCliente && !conEcfEnProduccion && !esFree && !sinNcfReciente(tenantId, tipoNcfCliente)) {
         const { data: ncfResult, error: ncfError } = await supabase.rpc('get_next_ncf', { p_tipo_ncf: tipoNcfCliente });
         marca('ncf');
         if (ncfError) throw ncfError;
@@ -1301,6 +1314,7 @@ export const useVentas = () => {
           facturaData.nombre_emisor_ncf = ncfResult.nombre_emisor || null;
           ncfData = ncfResult;
         } else if (ncfResult && !ncfResult.success) {
+          marcarSinNcf(tenantId, tipoNcfCliente);
           toast({
             title: 'Sin NCF disponible',
             description: `${ncfResult.error}. La factura se emite sin NCF.`,
