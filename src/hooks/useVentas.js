@@ -32,6 +32,9 @@ const DEFAULT_ITBIS_PCT = 0.18;
 // VEZ POR VENTA. Se recuerda 10 min por empresa y tipo: el aviso sale una
 // vez y la venta no espera. Si la vista previa encuentra secuencia (la
 // cargaron), se olvida en el acto y la próxima venta la usa.
+// SOLO si la empresa NUNCA tuvo secuencia de ese tipo y el tipo no pide RNC:
+// una secuencia agotada o vencida (o un B01) sigue avisando en cada venta,
+// porque ahí sí hay que hacer algo.
 const SIN_NCF_MS = 10 * 60 * 1000;
 const sinNcfHasta = new Map(); // `${tenant}:${tipo}` → ms
 const sinNcfReciente = (tenant, tipo) => (sinNcfHasta.get(`${tenant}:${tipo}`) || 0) > Date.now();
@@ -1314,7 +1317,15 @@ export const useVentas = () => {
           facturaData.nombre_emisor_ncf = ncfResult.nombre_emisor || null;
           ncfData = ncfResult;
         } else if (ncfResult && !ncfResult.success) {
-          marcarSinNcf(tenantId, tipoNcfCliente);
+          if (!tipoExigeRnc(tipoNcfCliente)) {
+            // ¿Nunca tuvo secuencia de este tipo? Una sola consulta, y solo
+            // cuando falló: el camino normal no paga nada.
+            try {
+              const { count, error: cErr } = await supabase.from('secuencias_ncf')
+                .select('id', { count: 'exact', head: true }).eq('tipo_ncf', tipoNcfCliente);
+              if (!cErr && count === 0) marcarSinNcf(tenantId, tipoNcfCliente);
+            } catch (_) { /* sin marca: se pregunta de nuevo la próxima vez */ }
+          }
           toast({
             title: 'Sin NCF disponible',
             description: `${ncfResult.error}. La factura se emite sin NCF.`,
