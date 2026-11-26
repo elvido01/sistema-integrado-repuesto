@@ -54,6 +54,7 @@ export default function CatalogoScreen() {
   const [cartModalQty, setCartModalQty] = useState<string>('1');
   // Para detectar double tap
   const lastTapRef = useRef<{ id: string; time: number } | null>(null);
+  const abriendoRef = useRef(0);
   // Ref para capturar la "tarjeta" (imagen + descripcion + precio) como una sola imagen para compartir
   const shareCardRef = useRef<View | null>(null);
 
@@ -62,7 +63,11 @@ export default function CatalogoScreen() {
 
   const onProductTap = useCallback((item: any) => {
     if (!modoCarrito) {
-      // modo normal: navega a detalle (single tap)
+      // modo normal: navega a detalle (single tap). (26/11/2026) Un doble
+      // toque abría el detalle DOS veces; el segundo toque en menos de 1 s se ignora.
+      const ahora = Date.now();
+      if (abriendoRef.current && ahora - abriendoRef.current < 1000) return;
+      abriendoRef.current = ahora;
       router.push(`/producto/${item.id}`);
       return;
     }
