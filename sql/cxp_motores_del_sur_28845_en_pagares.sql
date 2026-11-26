@@ -50,7 +50,7 @@ BEGIN
         total_usd = 1575, pendiente_usd = 1575,
         total_compra = 93712.50, total_gravado = 93712.50, monto_pendiente = 93712.50,
         dias_credito = v_venc - v_c.fecha,
-        notas = v_c.notas || ' · 26/11/2026: dividida en 6 pagarés de US$1,575 como dice el CONDUCE 028845.',
+        notas = concat_ws(' · ', NULLIF(v_c.notas, ''), '26/11/2026: dividida en 6 pagarés de US$1,575 como dice el CONDUCE 028845.'),
         updated_at = now()
       WHERE id = v_c.id;
     ELSE
@@ -61,7 +61,7 @@ BEGIN
         factura_dealer_id, tipo_pago_detalle, actualizar_precios, invoice_image_path, itbis_retenido_pct,
         tipo_retencion_isr, tipo_bienes_servicios)
       VALUES (v_c.ncf, v_c.fecha,
-        v_c.notas || ' · 26/11/2026: dividida en 6 pagarés de US$1,575 como dice el CONDUCE 028845.',
+        concat_ws(' · ', NULLIF(v_c.notas, ''), '26/11/2026: dividida en 6 pagarés de US$1,575 como dice el CONDUCE 028845.'),
         v_c.pagos, 'PENDIENTE', v_c.moneda, 'CAM-OC-0011-' || lpad(v_n::text, 2, '0'), NULL, v_c.sub_tipo,
         v_c.legacy_id || ':pagare' || v_n, c_mp,
         1575, v_c.almacen_id, v_c.forma_pago,

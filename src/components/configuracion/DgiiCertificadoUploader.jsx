@@ -59,6 +59,27 @@ function problemaVencimiento(v, ambiente) {
   return null;
 }
 
+// (26/11/2026) Lo normal: la DGII autoriza las secuencias hasta el 31 de
+// diciembre del AÑO SIGUIENTE a la autorización. Dos empresas escribieron mal
+// el año (BRIMAR 2028, Oscar Aristy 2026) y su primera factura salió
+// rechazada (145 "Fecha de vencimiento de secuencia inválida"). No se bloquea
+// (la DGII podría dar otra): se propone y se avisa si no coincide.
+// anioCarga = año de la primera carga de secuencias de producción (la fecha de
+// carga no cambia al cargar un rango nuevo, así que solo sirve de piso).
+// Vale cualquier 31 de diciembre entre anioCarga+1 y el año que viene: una
+// renovación (autorizada este año) vence el 31-12 del año que viene.
+function revisarVencimiento(fecha, anioCarga) {
+  const hoy = new Date().getFullYear();
+  const desde = Math.min(Number(anioCarga) + 1, hoy + 1);
+  const hasta = hoy + 1;
+  // Sugerencia: nunca una fecha que ya pasó.
+  const sugerida = `31-12-${Number(anioCarga) + 1 <= hoy ? hoy + 1 : desde}`;
+  if (!fecha) return { sugerida, raro: false };
+  const [d, m, a] = fecha.split('-').map(Number);
+  const raro = !(d === 31 && m === 12 && a >= desde && a <= hasta);
+  return { sugerida, raro, desde, hasta };
+}
+
 // (21/11/2026) Días que faltan para el vencimiento (negativo = ya venció);
 // null si la fecha no es válida. La fecha NO se cambia sola: es la de la
 // autorización de la DGII. Lo que se hace es avisar a tiempo.
@@ -111,6 +132,28 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
   const [ambiente, setAmbiente] = useState('CerteCF');
   const [callbackUrl, setCallbackUrl] = useState('');
   const [fechaVencimientoSecuencia, setFechaVencimientoSecuencia] = useState('');
+  // Año de la PRIMERA carga de secuencias de producción (piso de la regla);
+  // sin secuencias, el año en curso. Hasta leerlo no se avisa nada.
+  const [anioCarga, setAnioCarga] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    supabase.from('ecf_secuencias').select('created_at').eq('ambiente', 'Produccion')
+      .order('created_at', { ascending: true }).limit(1)
+      .then(({ data, error }) => {
+        if (!vivo) return;
+        if (error) { console.warn('[dgii] no se leyeron las secuencias para revisar el vencimiento:', error.message); return; }
+        setAnioCarga(data?.[0]?.created_at ? new Date(data[0].created_at).getFullYear() : new Date().getFullYear());
+      });
+    return () => { vivo = false; };
+  }, []);
+  const vencEscrito = normalizarVencimiento(fechaVencimientoSecuencia);
+  const revisionVenc = anioCarga == null ? null : revisarVencimiento(vencEscrito || '', anioCarga);
+  const vencNormal = revisionVenc?.sugerida;
+  const vencRaro = ambiente === 'Produccion' && !!vencEscrito && !!revisionVenc?.raro;
+  // Antes de guardar: si no es una fecha normal, que lo confirme.
+  const confirmarVencimiento = () => !vencRaro || window.confirm(
+    `El vencimiento escrito es ${vencEscrito}, y lo normal es el 31 de diciembre del año siguiente a la autorización (aquí, ${vencNormal}).\n\n` +
+    'Si no es exactamente la «Fecha Vencimiento» de tu solicitud aprobada en la Oficina Virtual, la DGII rechaza las facturas.\n\n¿Guardar igual?');
   const fileInputRef = useRef(null);
 
   // (23/11/2026) La razón social del e-CF tiene que ser la que la DGII tiene
@@ -492,6 +535,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
       toast({ title: 'Falta contrasena', description: 'Ingresa la contrasena del certificado .p12.', variant: 'destructive' });
       return;
     }
+    if (!confirmarVencimiento()) return;
 
     setSaving(true);
     try {
@@ -575,6 +619,7 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
         return;
       }
     }
+    if (!confirmarVencimiento()) return;
     setSaving(true);
     try {
       const { data, error } = await supabase.functions.invoke('emitir-fiscal', {
@@ -709,6 +754,15 @@ const DgiiCertificadoUploader = ({ onGuardado } = {}) => {
             <p className="text-[10px] text-red-600 font-semibold">
               {problemaVencimiento(fechaVencimientoSecuencia, ambiente)} Así no se puede guardar.
             </p>
+          )}
+          {ambiente === 'Produccion' && vencNormal && (vencRaro || !vencEscrito) && (
+            <div className={`rounded border px-2 py-1 text-[11px] ${vencRaro ? 'border-amber-300 bg-amber-50 text-amber-800 font-bold' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
+              {vencRaro
+                ? <>Ojo con esa fecha: la DGII da las secuencias hasta el 31 de diciembre del año siguiente a la autorización (lo normal aquí: <b>{vencNormal}</b>). Revisa que sea exactamente la de la Oficina Virtual o las facturas salen rechazadas.</>
+                : <>Lo normal es <b>{vencNormal}</b> (31 de diciembre del año siguiente a la autorización).</>}
+              {' '}
+              <button type="button" className="underline" onClick={() => setFechaVencimientoSecuencia(vencNormal)}>Usar {vencNormal}</button>
+            </div>
           )}
           {(() => {
             // Con la fecha GUARDADA y solo en producción (no con lo que se está escribiendo).

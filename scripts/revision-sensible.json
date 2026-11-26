@@ -304,7 +304,7 @@
     "src/components/compras/SuplidorVirtualMenu.jsx": "a99bc9d7b867d4a6",
     "src/components/configuracion/DgiiAprobacionComercialRunner.jsx": "b73f21888e93614d",
     "src/components/configuracion/DgiiCertificacionRunner.jsx": "ad60fe3cddd203e7",
-    "src/components/configuracion/DgiiCertificadoUploader.jsx": "8b5535d0b4b49722",
+    "src/components/configuracion/DgiiCertificadoUploader.jsx": "d6e998ab0100d4a8",
     "src/components/configuracion/DgiiGuiaPostulacion.jsx": "112fe014b85bcdf1",
     "src/components/configuracion/DgiiRecepcionRunner.jsx": "1d70110142f92c7e",
     "src/components/configuracion/DgiiRepresentacionImpresaRunner.jsx": "ed869911f50ec140",
@@ -486,16 +486,10 @@
     "sql/inventario_sin_movimiento_estado_lista.sql": "3ff55b14d84c4bb3",
     "sql/anular_cobro_prestamo_caido_en_caminero_1311.sql": "5fee9850b2537c0d",
     "sql/anular_cobro_prestamo_caido_en_motoprestamos_2511.sql": "f4a9f8f4db1033e5",
-    "sql/blindaje_cobro_prestamo_otra_empresa.sql": "85c821649f108ef0"
+    "sql/blindaje_cobro_prestamo_otra_empresa.sql": "85c821649f108ef0",
+    "sql/cxp_motores_del_sur_28845_en_pagares.sql": "b906b50584ff0a20"
   },
   "historial": [
-    {
-      "fecha": "2026-11-11",
-      "nota": "code-review high: cotejo incluyen ITBIS recordado por empresa en la PC; al llegar la empresa se aplica y se releen las lineas tecleadas; no se guarda sin empresa; apagado se marca en ambar.",
-      "archivos": [
-        "src/components/ventas/LineasServicios.jsx"
-      ]
-    },
     {
       "fecha": "2026-11-12",
       "nota": "code-review high: retencion en pantalla segun el comprobante real de la factura (preview e-CF o NCF de la factura editada), igual que recalcular_retenciones_factura; nota de NG 02-2026 solo si aplica. App movil: lupa DGII en el buscador de clientes con guardas de doble toque y resultado tardio.",
@@ -1037,6 +1031,14 @@
         "src/components/common/pdf/compraPDF.js",
         "src/components/common/pdf/pagoCompromisoPDF.js",
         "src/components/common/pdf/pagoSuplidorPDF.js"
+      ]
+    },
+    {
+      "fecha": "2026-11-26",
+      "nota": "code-review high: vencimiento e-CF propuesto y vigilado; corregido: regla por rango (piso = 1ra carga, techo = año que viene) para no fallar en renovaciones, nunca sugiere fecha pasada, sin aviso hasta leer las secuencias, confirmación después de archivo/contraseña; SQL pagarés 28845 con concat_ws (ya aplicado, verificado)",
+      "archivos": [
+        "sql/cxp_motores_del_sur_28845_en_pagares.sql",
+        "src/components/configuracion/DgiiCertificadoUploader.jsx"
       ]
     }
   ]
