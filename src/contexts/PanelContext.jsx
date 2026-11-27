@@ -64,6 +64,7 @@ const SitioColegioPage = lazy(() => import('@/pages/colegio/SitioColegioPage'));
 import PlanProGate from '@/components/common/PlanProGate';
 const ContratosAlquilerPage = lazy(() => import('@/pages/ContratosAlquilerPage'));
 const DocumentacionClientePage = lazy(() => import('@/pages/DocumentacionClientePage'));
+const PlacasMatriculasPage = lazy(() => import('@/pages/PlacasMatriculasPage'));
 const ReportesDGIIPage = lazy(() => import('@/pages/ReportesDGIIPage'));
 const MiContabilidadPage = lazy(() => import('@/pages/MiContabilidadPage'));
 const ComprobantesGastosPage = lazy(() => import('@/pages/ComprobantesGastosPage'));
@@ -234,7 +235,9 @@ const componentMapping = {
   'nota-credito': { component: () => <Protected module="nota-credito"><NotaCreditoFinancieraPage /></Protected>, icon: Receipt, name: 'Nota de Crédito' },
   'otras-transacciones': { component: () => <Protected module="otras-transacciones"><OtrasTransaccionesPage /></Protected>, icon: Receipt, name: 'Otras Transacciones' },
   'historico-cliente': { component: () => <Protected module="historico-cliente"><HistoricoClientePage /></Protected>, icon: Receipt, name: 'Histórico de Cliente' },
-  'notas-comentarios': { component: () => <Protected module="notas-comentarios"><NotasComentariosPage /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
+  'notas-comentarios': { component: ({ extraData }) => <Protected module="notas-comentarios"><NotasComentariosPage extraData={extraData} /></Protected>, icon: FileText, name: 'Notas y Comentarios' },
+  // (27/11/2026) Placa y Matrícula: los mismos datos de Notas y Comentarios (mismo permiso).
+  'placas-matriculas': { component: () => <Protected module="notas-comentarios"><PlacasMatriculasPage /></Protected>, icon: FileImage, name: 'Placa y Matrícula' },
   'lista-chasis-prestamos': { component: () => <Protected module="lista-chasis-prestamos"><ListaChasisPrestamosPage /></Protected>, icon: Receipt, name: 'Lista de Chasis en Préstamos' },
   'intereses-cobrados': { component: () => <Protected module="intereses-cobrados"><InteresesCobradosPage /></Protected>, icon: Receipt, name: 'Interés Cobrado o Acreditado' },
   'resumen-cartera': { component: () => <Protected module="resumen-cartera"><ResumenCarteraPage /></Protected>, icon: PieChart, name: 'Resumen de Cartera' },

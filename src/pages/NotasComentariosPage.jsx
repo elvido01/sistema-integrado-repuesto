@@ -36,7 +36,7 @@ const fhora = (ts) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
 };
 
-const NotasComentariosPage = () => {
+const NotasComentariosPage = ({ extraData } = {}) => {
   const { toast } = useToast();
   const { tenantId, user, profile, empresa } = useAuth();
   const { closePanel, activePanel } = usePanels();
@@ -164,8 +164,17 @@ const NotasComentariosPage = () => {
       cli = data || null;
     }
     if (cli) seleccionarCliente(cli);
+    else if (!r.cliente_id && !r.cliente_nombre && !r.documento_identidad) toast({ title: 'Unidad sin vender', description: 'Todavía no tiene cliente. Edítala en Documentos → Placa y Matrícula.' });
     else toast({ variant: 'destructive', title: 'Sin cliente registrado', description: 'Este registro no está ligado a ningún cliente del catálogo.' });
   };
+
+  // (27/11/2026) Desde Placa y Matrícula ("Notas" de una unidad vendida): abre
+  // la ficha de ese cliente. t cambia en cada clic para reabrir el mismo.
+  React.useEffect(() => {
+    if (!extraData?.t || (!extraData.clienteId && !extraData.cedula)) return;
+    seleccionarDesdeListado({ cliente_id: extraData.clienteId, documento_identidad: extraData.cedula });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraData?.t]);
 
   const volverAlListado = () => {
     setCliente(null); setCodigoInput('');
@@ -426,7 +435,7 @@ const NotasComentariosPage = () => {
                           onClick={() => seleccionarDesdeListado(r)}
                           className={`border-b last:border-0 cursor-pointer hover:bg-blue-50 ${i % 2 === 1 ? 'bg-[#f7fafc]' : 'bg-white'}`}>
                         <td className="px-2 py-1 font-semibold uppercase truncate max-w-[220px]">
-                          {r.cliente_nombre || '—'}
+                          {r.cliente_nombre || <span className="text-amber-700">SIN VENDER</span>}
                           {r.tenant_id !== tenantId && (
                             <span className="ml-1 inline-block px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold align-middle" title="Registro de la empresa aliada">ALIADA</span>
                           )}

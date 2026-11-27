@@ -159,6 +159,9 @@ const navItems = [
     icon: FileText,
     subItems: [
       { title: 'Notas y Comentarios', id: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', moduloOr: 'notas_comentarios' },
+      // (27/11/2026) Placas y matrículas en existencia (aunque la moto no se haya
+      // vendido). Mismos datos y mismo permiso que Notas y Comentarios.
+      { title: 'Placa y Matrícula', id: 'placas-matriculas', permissionKey: 'notas-comentarios', icon: FileText, tipoNegocio: 'financiera', moduloOr: 'notas_comentarios' },
     ],
   },
   {
